@@ -627,7 +627,7 @@ with st.sidebar:
     with c2:
         years     = list(range(2023, today.year + 1))
         sel_year  = st.selectbox("Year", years, index=years.index(today.year))
-    if st.button("🔄 Refresh data", use_container_width=True):
+    if st.button("🔄 Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
 
@@ -1286,12 +1286,12 @@ def show_college_detail(college_name: str):
 
             st.markdown(f"##### Monthly Enrolments — last 14 months")
             st.bar_chart(trend_idx[["new_enrol"]], color="#2563eb",
-                         use_container_width=True)
+                         width="stretch")
 
             with st.expander("📊 Pauses & Archives"):
                 st.line_chart(trend_idx[["pauses", "archives"]],
                               color=["#f59e0b", "#ef4444"],
-                              use_container_width=True)
+                              width="stretch")
 
             with st.expander("📋 Raw data"):
                 st.dataframe(
@@ -1299,7 +1299,7 @@ def show_college_detail(college_name: str):
                         "month": "Month", "new_enrol": "New",
                         "pauses": "Paused", "archives": "Archived", "net": "Net ±",
                     }),
-                    hide_index=True, use_container_width=True,
+                    hide_index=True, width="stretch",
                 )
 
     # ── Tab 2: Study Track ────────────────────────────────────────────────────
@@ -1312,7 +1312,7 @@ def show_college_detail(college_name: str):
         else:
             st.markdown("##### New Study-Track Students — last 14 months")
             st.bar_chart(st_df.set_index("month")[["new_st"]],
-                         color="#7c3aed", use_container_width=True)
+                         color="#7c3aed", width="stretch")
             st.caption(
                 "Study-track students = degree_students where "
                 "has_activity_before_invitation = true"

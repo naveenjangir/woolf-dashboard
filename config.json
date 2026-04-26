@@ -1,0 +1,315 @@
+{
+  "_readme": "Fill in agreement_start, seat_fee, st_conversion_fee, oxford_sbs_fee per college. Exeed College uses seat_fee_eqf6 for EQF6 degrees and seat_fee_default for all others. Leave oxford_sbs_fee as 0 if the college has no Oxford SBS courses.",
+
+  "ALTIS Higher Education": {
+    "college_id": "a513decd-1c8a-4a2d-a44c-c8c0a9126d7e",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Africa Digital Media Institute": {
+    "college_id": "7134b003-5bcc-45fe-9bf0-67a36b5f0372",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "AlmaBetter Innovarsity": {
+    "college_id": "09d88ade-66bd-4b84-8aab-b70232434c2b",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Authstone College": {
+    "college_id": "374ccdd6-ddfc-48de-aead-e157c9128347",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Breathe For Change": {
+    "college_id": "4745f0c0-df8c-4f17-b746-6295371d1921",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Clarke College": {
+    "college_id": "eb3302cc-5e5e-4632-8300-d44d4d5ee5e3",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Data Science Institute": {
+    "college_id": "d3e1593f-3e1b-4495-be50-e630fb505acf",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Deep Science Ventures": {
+    "college_id": "45e801dd-3e7f-4e4b-b26d-79903a96e3b7",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Digital Scholar": {
+    "college_id": "0d1a9c86-51ae-4f29-89b5-02cb8cf56cb2",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Directors' Institute - World Council Of Directors": {
+    "college_id": "8c7c5311-5e52-413f-8803-041420c92cc6",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Exeed College": {
+    "college_id": "766516ed-91ce-4939-b8dc-17d9a6e0ed47",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 20,
+    "seat_fee_eqf6": 50,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD",
+    "_note": "seat_fee_eqf6 applies to EQF6 degrees; seat_fee_default for all others"
+  },
+  "GMC School of Technology": {
+    "college_id": "f474ea44-285a-4389-a642-ff77fe0d6344",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Global Center for Advanced Studies": {
+    "college_id": "fa574a7f-32fa-461b-bd91-559174a413fc",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Global School of Entrepreneurship": {
+    "college_id": "6cb2e8ff-7ef1-4ab1-afc8-a8bd6b856e1b",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "GoIT Neoversity": {
+    "college_id": "2856acd3-c1e1-421c-989e-c7ddbd32b2f2",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Inner Institute": {
+    "college_id": "35287596-c243-4507-8154-dc2bf8a179b9",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Kingsford College of Business and Technology": {
+    "college_id": "1cd711c5-8c2d-4c52-8ae4-6f79c9e9fd94",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Learnbay": {
+    "college_id": "bb43ed7d-edff-4e25-b530-2e950496519c",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "MATRIX - Maven Academy for Technology, Research, Innovation & eXcellence": {
+    "college_id": "a473b111-1720-41ae-a89b-b0991e346a6c",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "MSM Grad": {
+    "college_id": "20883982-c358-4d4c-b077-b69d90f99e18",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Mentogram": {
+    "college_id": "c6ce3350-44f1-4d03-aae2-63842120493a",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "NxtWave School of Technology": {
+    "college_id": "4659583f-a691-43f5-8283-32ccc8f36636",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Oneday": {
+    "college_id": "e0d62853-c42e-46d3-ba94-0a89b439956d",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Pickering Global Campus": {
+    "college_id": "86692b0e-d6bc-4ebd-ae11-8400ae2e89ec",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Retro Biosciences": {
+    "college_id": "8aeb2b8c-96cf-4c1f-985b-d0eb9bb61ce1",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Scaler Neovarsity": {
+    "college_id": "9b17f5ce-1078-4fdf-aec0-02bf4ecfb0a6",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Studienzentrum Hohe Warte": {
+    "college_id": "b2f9ecd0-1218-4ad9-87c9-90ffb451ee7a",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "The Global Leaders Institute": {
+    "college_id": "9a2994dc-5231-4e14-ac0e-d882eaf2e5c1",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "UGNXT": {
+    "college_id": "97f8c54f-ecf7-4f5a-b4d7-c85a0026da07",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "Udacity Institute of AI & Technology": {
+    "college_id": "5b486c29-54d6-44b5-859e-5927ef430cb4",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  },
+  "WeStride Institute of Technology": {
+    "college_id": "3abe3ed8-e46b-47d3-bfff-c8557d697817",
+    "agreement_start": "2024-01-01",
+    "seat_fee_default": 0,
+    "seat_fee_eqf6": null,
+    "st_conversion_fee": 0,
+    "oxford_sbs_fee": 0,
+    "rpl_admission_fee": 200,
+    "currency": "USD"
+  }
+}

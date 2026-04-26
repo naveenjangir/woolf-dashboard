@@ -580,7 +580,6 @@ def html_table(rows: list, cols: list,
 # ── Data loaders (cached) ─────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner="📡 Fetching data from Metabase…")
-@st.cache_data(ttl=3600, show_spinner=False)
 def get_data(year: int, month: int) -> pd.DataFrame:
     return load_all_colleges(year, month)
 
@@ -627,7 +626,7 @@ with st.sidebar:
     with c2:
         years     = list(range(2023, today.year + 1))
         sel_year  = st.selectbox("Year", years, index=years.index(today.year))
-    if st.button("🔄 Refresh data", width="stretch"):
+    if st.button("🔄 Refresh data"):
         st.cache_data.clear()
         st.rerun()
 
@@ -1285,13 +1284,11 @@ def show_college_detail(college_name: str):
             trend_idx = trend_df.set_index("month")
 
             st.markdown(f"##### Monthly Enrolments — last 14 months")
-            st.bar_chart(trend_idx[["new_enrol"]], color="#2563eb",
-                         width="stretch")
+            st.bar_chart(trend_idx[["new_enrol"]], color="#2563eb")
 
             with st.expander("📊 Pauses & Archives"):
                 st.line_chart(trend_idx[["pauses", "archives"]],
-                              color=["#f59e0b", "#ef4444"],
-                              width="stretch")
+                              color=["#f59e0b", "#ef4444"])
 
             with st.expander("📋 Raw data"):
                 st.dataframe(
@@ -1312,7 +1309,7 @@ def show_college_detail(college_name: str):
         else:
             st.markdown("##### New Study-Track Students — last 14 months")
             st.bar_chart(st_df.set_index("month")[["new_st"]],
-                         color="#7c3aed", width="stretch")
+                         color="#7c3aed")
             st.caption(
                 "Study-track students = degree_students where "
                 "has_activity_before_invitation = true"

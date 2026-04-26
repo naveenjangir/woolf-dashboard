@@ -2,29 +2,33 @@
 
 import requests
 import pandas as pd
-import streamlit as st
 
-METABASE_URL = st.secrets["METABASE_URL"]
-API_KEY      = st.secrets["METABASE_API_KEY"]
-DATABASE_ID  = int(st.secrets.get("METABASE_DATABASE_ID", 3))
-
-HEADERS = {
-    "x-api-key": API_KEY,
-    "Content-Type": "application/json",
-}
+# Secrets are lazy-loaded inside run_query so this module is safe to import
+# before Streamlit's runtime context is fully initialised.
+_DATABASE_ID_DEFAULT = 3
 
 
 def run_query(sql: str) -> pd.DataFrame:
     """Execute a read-only SQL query and return a DataFrame."""
+    import streamlit as st
+
+    url     = st.secrets["METABASE_URL"]
+    api_key = st.secrets["METABASE_API_KEY"]
+    db_id   = int(st.secrets.get("METABASE_DATABASE_ID", _DATABASE_ID_DEFAULT))
+
+    headers = {
+        "x-api-key": api_key,
+        "Content-Type": "application/json",
+    }
     payload = {
-        "database": DATABASE_ID,
+        "database": db_id,
         "type": "native",
         "native": {"query": sql},
     }
     resp = requests.post(
-        f"{METABASE_URL}/api/dataset",
+        f"{url}/api/dataset",
         json=payload,
-        headers=HEADERS,
+        headers=headers,
         timeout=120,
     )
     resp.raise_for_status()

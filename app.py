@@ -630,14 +630,36 @@ with st.sidebar:
     else:
         st.markdown("### 🎓 Woolf Dashboard")
     st.divider()
+    # ── Date selector — hard min: April 2026 ─────────────────────────────────
+    _MIN_YEAR, _MIN_MONTH = 2026, 4   # April 2026 hard minimum
+
+    # Build list of valid (year, month) pairs from April 2026 → today
+    _valid_periods = [
+        (y, m)
+        for y in range(_MIN_YEAR, today.year + 1)
+        for m in range(1, 13)
+        if (y > _MIN_YEAR or m >= _MIN_MONTH)
+        and (y < today.year or m <= today.month)
+    ]
+    _period_labels = [f"{calendar.month_abbr[m]} {y}" for y, m in _valid_periods]
+    _default_idx   = len(_valid_periods) - 1   # default = current month
+
     c1, c2 = st.columns(2)
     with c1:
         sel_month = st.selectbox(
             "Month", range(1, 13), index=today.month - 1,
             format_func=lambda m: calendar.month_abbr[m])
     with c2:
-        years     = list(range(2023, today.year + 1))
+        years     = list(range(_MIN_YEAR, today.year + 1))
         sel_year  = st.selectbox("Year", years, index=years.index(today.year))
+
+    # Clamp selection to valid range
+    if (sel_year, sel_month) < (_MIN_YEAR, _MIN_MONTH):
+        sel_month = _MIN_MONTH
+        sel_year  = _MIN_YEAR
+    if (sel_year, sel_month) > (today.year, today.month):
+        sel_month = today.month
+        sel_year  = today.year
     if st.button("🔄 Refresh data"):
         st.cache_data.clear()
         st.rerun()

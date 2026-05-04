@@ -103,27 +103,63 @@ def _all_activity_counts(year: int, month: int,
 def _active_base(year: int, month: int) -> pd.DataFrame:
     """
     Active students per college (ACTIVE / PENDING / SUBMITTED), filtered to
-    students enrolled on or after the college's CURRENT phase start date
-    (latest subscription_phases.version = current billing contract start).
-    e.g. AlmaBetter phase started 2025-03-05 → only students enrolled ≥ that date.
+    students enrolled on or after the college's CURRENT phase start date.
+
+    Current month  → live count (status field, as today).
+    Past month     → historical snapshot as of last day of that month:
+                     enrolled before EOD, not yet archived, not paused on that day.
     """
-    sql = """
-    WITH phase_start AS (
-      -- Latest phase per college = current billing contract start date
-      SELECT s.college_id, MAX(sp.version) AS phase_date
-      FROM production.subscription_phases sp
-      JOIN production.subscriptions s ON s.id = sp.subscription_id
-      GROUP BY s.college_id
-    )
-    SELECT
-      ds.college_id,
-      COUNT(*) AS active_base
-    FROM production.degree_students ds
-    LEFT JOIN phase_start ps ON ps.college_id = ds.college_id
-    WHERE ds.status IN ('ACTIVE','PENDING','SUBMITTED')
-      AND (ps.phase_date IS NULL OR DATE(ds.created) >= DATE(ps.phase_date))
-    GROUP BY ds.college_id
-    """
+    today = date.today()
+    is_current = (year == today.year and month == today.month)
+
+    if is_current:
+        # Live count — same as before
+        sql = """
+        WITH phase_start AS (
+          SELECT s.college_id, MAX(sp.version) AS phase_date
+          FROM production.subscription_phases sp
+          JOIN production.subscriptions s ON s.id = sp.subscription_id
+          GROUP BY s.college_id
+        )
+        SELECT
+          ds.college_id,
+          COUNT(*) AS active_base
+        FROM production.degree_students ds
+        LEFT JOIN phase_start ps ON ps.college_id = ds.college_id
+        WHERE ds.status IN ('ACTIVE','PENDING','SUBMITTED')
+          AND (ps.phase_date IS NULL OR DATE(ds.created) >= DATE(ps.phase_date))
+        GROUP BY ds.college_id
+        """
+    else:
+        # Historical snapshot: count students active on last day of that month
+        _, last_day = month_bounds(year, month)
+        sql = f"""
+        WITH phase_start AS (
+          SELECT s.college_id, MAX(sp.version) AS phase_date
+          FROM production.subscription_phases sp
+          JOIN production.subscriptions s ON s.id = sp.subscription_id
+          GROUP BY s.college_id
+        )
+        SELECT
+          ds.college_id,
+          COUNT(*) AS active_base
+        FROM production.degree_students ds
+        LEFT JOIN phase_start ps ON ps.college_id = ds.college_id
+        WHERE
+          -- Enrolled on or before last day of month
+          DATE(ds.created) <= '{last_day}'
+          -- Within current billing phase
+          AND (ps.phase_date IS NULL OR DATE(ds.created) >= DATE(ps.phase_date))
+          -- Not archived before end of month
+          AND (ds.delisted_timestamp IS NULL OR DATE(ds.delisted_timestamp) > '{last_day}')
+          -- Not paused on the last day of month
+          AND NOT (
+            ds.pause_started IS NOT NULL
+            AND DATE(ds.pause_started) <= '{last_day}'
+            AND (ds.pause_ended IS NULL OR DATE(ds.pause_ended) > '{last_day}')
+          )
+        GROUP BY ds.college_id
+        """
     return run_query(sql).set_index("college_id")
 
 
@@ -131,17 +167,31 @@ def _seat_exp_revenue(year: int, month: int) -> pd.DataFrame:
     """
     Expected monthly seat revenue per college = SUM(active_students_per_degree × seat_fee).
 
-    Fixes the avg(seat_fee_min, seat_fee_max) approximation: each active student
-    is multiplied by THEIR degree's actual configured seat fee.
-    e.g. Exeed active MBA students → $50 each; active PhD students → $20 each.
-
-    Active = ACTIVE/PENDING/SUBMITTED, enrolled >= latest phase start.
+    Current month  → live active count × seat fee.
+    Past month     → historical snapshot (EOD last day of month) × seat fee.
     """
-    sql = """
+    today = date.today()
+    is_current = (year == today.year and month == today.month)
+
+    if is_current:
+        active_filter = "ds.status IN ('ACTIVE','PENDING','SUBMITTED')"
+    else:
+        _, last_day = month_bounds(year, month)
+        active_filter = f"""
+          DATE(ds.created) <= '{last_day}'
+          AND (ds.delisted_timestamp IS NULL OR DATE(ds.delisted_timestamp) > '{last_day}')
+          AND NOT (
+            ds.pause_started IS NOT NULL
+            AND DATE(ds.pause_started) <= '{last_day}'
+            AND (ds.pause_ended IS NULL OR DATE(ds.pause_ended) > '{last_day}')
+          )
+        """
+
+    sql = f"""
     WITH phase_start AS (
       SELECT s.college_id,
         MAX(sp.version) AS phase_date,
-        MAX(sp.id)      AS phase_id        -- latest phase id (for price lookup)
+        MAX(sp.id)      AS phase_id
       FROM production.subscription_phases sp
       JOIN production.subscriptions s ON s.id = sp.subscription_id
       GROUP BY s.college_id
@@ -162,7 +212,7 @@ def _seat_exp_revenue(year: int, month: int) -> pd.DataFrame:
     JOIN phase_start             ps ON ps.college_id = ds.college_id
     LEFT JOIN seat_fee_per_degree sf ON sf.college_id = ds.college_id
                                     AND sf.degree_id  = ds.degree_id
-    WHERE ds.status IN ('ACTIVE','PENDING','SUBMITTED')
+    WHERE {active_filter}
       AND DATE(ds.created) >= DATE(ps.phase_date)
     GROUP BY ds.college_id
     """

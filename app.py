@@ -57,6 +57,7 @@ SQUAD_MAP: dict[str, list[str]] = {
     "US Squad": [
         "ALTIS Higher Education",
         "Breathe For Change",
+        "Chegg Skills Institute of Applied Learning",
         "Clarke College",
         "Data Science Institute",
         "GoIT Neoversity",

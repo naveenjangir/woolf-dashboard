@@ -675,7 +675,7 @@ if is_current_month:
     cur_lbl  = f"{calendar.month_abbr[sel_month]} {sel_year} MTD"   # e.g. "May 2026 MTD"
     vsm1_lbl = f"vs {calendar.month_abbr[pm]} {py} MTD"             # e.g. "vs Apr 2026 MTD"
     vsy1_lbl = f"vs {calendar.month_abbr[my1]} {yy1} MTD"           # e.g. "vs May 2025 MTD"
-    active_lbl = active_lbl
+    active_lbl = "Active (today)"
 else:
     cur_lbl  = f"{calendar.month_abbr[sel_month]} {sel_year}"        # e.g. "Apr 2026" (full month)
     vsm1_lbl = f"vs {calendar.month_abbr[pm]} {py} (1–{_last_day_sel})"   # e.g. "vs Mar 2026 (1–30)"

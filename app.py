@@ -669,13 +669,23 @@ py,  pm  = prev_month(sel_year, sel_month)
 yy1, my1 = year_ago(sel_year, sel_month)
 period    = f"{calendar.month_name[sel_month]} {sel_year}"
 is_current_month = (sel_year == today.year and sel_month == today.month)
-cur_lbl   = f"{calendar.month_abbr[sel_month]} {sel_year} MTD"     # e.g. "Apr 2026 MTD"  (partial month)
-m1_lbl    = f"{calendar.month_abbr[pm]} {py}"                      # e.g. "Mar 2026"      (full month)
-y1_lbl    = f"{calendar.month_abbr[my1]} {yy1}"                    # e.g. "Apr 2025"      (full month)
-vsm1_lbl  = f"vs {calendar.month_abbr[pm]} {py} MTD"               # e.g. "vs Mar 2026 MTD"
-vsy1_lbl  = f"vs {calendar.month_abbr[my1]} {yy1} MTD"             # e.g. "vs Apr 2025 MTD"
-proj_lbl  = f"Projected {calendar.month_abbr[sel_month]} {sel_year}"  # e.g. "Projected Apr 2026"
-proj_key  = f"{sel_year}-{sel_month:02d}"                           # e.g. "2026-04"
+_last_day_sel = calendar.monthrange(sel_year, sel_month)[1]   # last day of selected month
+
+if is_current_month:
+    cur_lbl  = f"{calendar.month_abbr[sel_month]} {sel_year} MTD"   # e.g. "May 2026 MTD"
+    vsm1_lbl = f"vs {calendar.month_abbr[pm]} {py} MTD"             # e.g. "vs Apr 2026 MTD"
+    vsy1_lbl = f"vs {calendar.month_abbr[my1]} {yy1} MTD"           # e.g. "vs May 2025 MTD"
+    active_lbl = active_lbl
+else:
+    cur_lbl  = f"{calendar.month_abbr[sel_month]} {sel_year}"        # e.g. "Apr 2026" (full month)
+    vsm1_lbl = f"vs {calendar.month_abbr[pm]} {py} (1–{_last_day_sel})"   # e.g. "vs Mar 2026 (1–30)"
+    vsy1_lbl = f"vs {calendar.month_abbr[my1]} {yy1}"                # e.g. "vs Apr 2025"
+    active_lbl = f"Active ({calendar.month_abbr[sel_month]} {_last_day_sel})"  # e.g. "Active (Apr 30)"
+
+m1_lbl    = f"{calendar.month_abbr[pm]} {py}"                       # e.g. "Mar 2026" (full month)
+y1_lbl    = f"{calendar.month_abbr[my1]} {yy1}"                     # e.g. "Apr 2025" (full month)
+proj_lbl  = f"Projected {calendar.month_abbr[sel_month]} {sel_year}"
+proj_key  = f"{sel_year}-{sel_month:02d}"
 proj_month = PROJECTIONS.get(proj_key, {})
 
 # ── Load main dataset ─────────────────────────────────────────────────────────
@@ -868,7 +878,7 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
         archived_col = f"Archived ({pm_short} {py})"
         net_col      = f"Net ± ({period})"
 
-        cols = ["College", "Active (today)", proj_lbl, cur_lbl,
+        cols = ["College", active_lbl, proj_lbl, cur_lbl,
                 m1_lbl, y1_lbl, vsm1_lbl, vsy1_lbl, "Est. EOM vs Proj",
                 paused_col, archived_col, net_col,
                 "Seat Fee", "Seat Rev ($)"]
@@ -903,7 +913,7 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
 
             row = {
                 "College":        r["name"],
-                "Active (today)": safe_int(r["active_base"]),
+                active_lbl: safe_int(r["active_base"]),
                 proj_lbl:         proj if proj is not None else PENDING,
                 cur_lbl:          cur_enrol,
                 m1_lbl:           int(r["new_enrol_m1"]),
@@ -993,7 +1003,7 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
         _eom_var = fmt_variance(_t["eom_est"] - _t["proj"]) if _t["proj"] else ""
         _tr = {c: "" for c in cols}
         _tr["College"]          = "TOTAL"
-        _tr["Active (today)"]   = _t["active"]
+        _tr[active_lbl]   = _t["active"]
         _tr[proj_lbl]           = _t["proj"]   if _t["proj"]   else PENDING
         _tr[cur_lbl]            = _t["cur"]
         _tr[m1_lbl]             = _t["m1"]
@@ -1057,9 +1067,9 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
             '<div class="wt-caption">'
             f'Active (today) = ACTIVE/PENDING/SUBMITTED enrolled since contract-start date · '
             f'{proj_lbl} = manual Q2 forecast · '
-            f'{cur_lbl} = enrolments so far this month (day 1–{today.day}) · '
+            f'{cur_lbl} = {"enrolments so far this month" if is_current_month else "full month enrolments"} (day 1–{today.day if is_current_month else _last_day_sel}) · '
             f'{m1_lbl} / {y1_lbl} = full calendar month totals · '
-            f'vs columns = MTD comparison (day 1–{today.day} in each month), shows ▲/▼ + raw "X vs Y" · '
+            f'vs columns = {"MTD comparison (day 1–" + str(today.day) + " in each month)" if is_current_month else "full period comparison (day 1–" + str(_last_day_sel) + ")"}, shows ▲/▼ + raw "X vs Y" · '
             f'Est. EOM vs Proj = estimated full-month (MTD ÷ seasonal rate) minus projected; '
             f'* = completion rate <25% so extrapolation unreliable — shows MTD vs projected instead (minimum variance already locked in) · '
             f'Paused/Archived = {pm_short} {py} exits (not billed this month) · '
@@ -1266,9 +1276,9 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
         st.markdown(
             '<div class="wt-caption">'
             f'{proj_lbl} = manual Q2 forecast · '
-            f'{cur_lbl} = enrolments so far this month (day 1–{today.day}) · '
+            f'{cur_lbl} = {"enrolments so far this month" if is_current_month else "full month enrolments"} (day 1–{today.day if is_current_month else _last_day_sel}) · '
             f'{m1_lbl} / {y1_lbl} = full calendar month totals · '
-            f'vs columns = MTD comparison (day 1–{today.day} in each month), shows ▲/▼ + raw "X vs Y" · '
+            f'vs columns = {"MTD comparison (day 1–" + str(today.day) + " in each month)" if is_current_month else "full period comparison (day 1–" + str(_last_day_sel) + ")"}, shows ▲/▼ + raw "X vs Y" · '
             'Est. EOM vs Proj = estimated full-month (MTD ÷ seasonal rate) minus projected; '
             '* = MTD vs projected (completion rate <25%, extrapolation unreliable — shows minimum variance locked in) · '
             'Arch ≤30d = enrolled in last 30 days, now archived (refund window) · '

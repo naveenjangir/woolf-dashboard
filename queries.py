@@ -659,7 +659,11 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
     """
     py,  pm  = prev_month(year, month)
     yy1, my1 = year_ago(year, month)
-    today_day = date.today().day   # MTD cap for apple-to-apple comparisons
+    today = date.today()
+    is_current = (year == today.year and month == today.month)
+    # For current month: cap comparisons at today's day-of-month (apple-to-apple MTD)
+    # For past months: cap at last day of selected month (full month vs equivalent period)
+    today_day = today.day if is_current else calendar.monthrange(year, month)[1]
 
     tasks = {
         # ── Single activities scan covers this/m1/y1/m1_mtd/y1_mtd (was 5 queries) ──

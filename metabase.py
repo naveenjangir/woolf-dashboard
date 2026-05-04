@@ -1,5 +1,6 @@
 """Metabase API client - read-only SQL execution."""
 
+import os
 import requests
 import pandas as pd
 
@@ -8,13 +9,25 @@ import pandas as pd
 _DATABASE_ID_DEFAULT = 3
 
 
+def _get_secret(key: str, default: str | None = None) -> str | None:
+    """Read secret from env var (Railway) or st.secrets (local/Streamlit Cloud)."""
+    # Environment variable takes priority (Railway, Docker, etc.)
+    val = os.environ.get(key)
+    if val:
+        return val
+    # Fallback to st.secrets for local development
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+
 def run_query(sql: str) -> pd.DataFrame:
     """Execute a read-only SQL query and return a DataFrame."""
-    import streamlit as st
-
-    url     = st.secrets["METABASE_URL"]
-    api_key = st.secrets["METABASE_API_KEY"]
-    db_id   = int(st.secrets.get("METABASE_DATABASE_ID", _DATABASE_ID_DEFAULT))
+    url     = _get_secret("METABASE_URL")
+    api_key = _get_secret("METABASE_API_KEY")
+    db_id   = int(_get_secret("METABASE_DATABASE_ID", str(_DATABASE_ID_DEFAULT)))
 
     headers = {
         "x-api-key": api_key,

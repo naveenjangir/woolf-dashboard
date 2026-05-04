@@ -540,19 +540,60 @@ def get_college_trend(college_id: str, months: int = 14) -> pd.DataFrame:
 
 
 def get_st_trend(college_id: str, months: int = 14) -> pd.DataFrame:
-    """Monthly study-track student count for a single college."""
+    """
+    Monthly new study-track enrolments for a single college.
+    Uses st_students (same source as the st_new_this_month KPI metric),
+    NOT degree_students.has_activity_before_invitation which shows
+    ST→Degree conversions — a different metric.
+    """
     sql = f"""
     SELECT
-      FORMAT_DATE('%Y-%m', DATE(created)) AS month,
-      COUNT(*) AS new_st
-    FROM production.degree_students
-    WHERE college_id = '{college_id}'
-      AND has_activity_before_invitation = true
-      AND DATE(created) >= DATE_SUB(CURRENT_DATE(), INTERVAL {months} MONTH)
+      FORMAT_DATE('%Y-%m', DATE(st.created)) AS month,
+      COUNT(*)                                AS new_st
+    FROM production.st_students st
+    JOIN production.students s ON s.id = st.student_id
+    WHERE s.college_id = '{college_id}'
+      AND DATE(st.created) >= DATE_SUB(CURRENT_DATE(), INTERVAL {months} MONTH)
     GROUP BY month
     ORDER BY month
     """
     return run_query(sql)
+
+
+def get_graduation_data(college_id: str) -> dict:
+    """
+    Graduation stats for a college.
+    'COMPLETED' status in degree_students = graduated.
+    Returns a dict with:
+      - summary  : DataFrame(total_graduates, total_enrolled, grad_rate_pct)
+      - trend    : DataFrame(month, graduates) — monthly new graduates, all time
+    """
+    summary_sql = f"""
+    SELECT
+      COUNTIF(status = 'COMPLETED')  AS total_graduates,
+      COUNT(*)                        AS total_enrolled,
+      ROUND(
+        SAFE_DIVIDE(COUNTIF(status = 'COMPLETED'), COUNT(*)) * 100, 1
+      )                               AS grad_rate_pct
+    FROM production.degree_students
+    WHERE college_id = '{college_id}'
+    """
+
+    trend_sql = f"""
+    SELECT
+      FORMAT_DATE('%Y-%m', DATE(created)) AS month,
+      COUNT(*)                             AS graduates
+    FROM production.degree_students
+    WHERE college_id  = '{college_id}'
+      AND status      = 'COMPLETED'
+    GROUP BY month
+    ORDER BY month
+    """
+
+    return {
+        "summary": run_query(summary_sql),
+        "trend":   run_query(trend_sql),
+    }
 
 
 # ── Master loader ─────────────────────────────────────────────────────────────

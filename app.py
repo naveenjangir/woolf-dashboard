@@ -15,7 +15,7 @@ from PIL import Image
 
 from queries import (
     load_all_colleges, get_college_trend, get_st_trend,
-    prev_month, year_ago,
+    get_graduation_data, prev_month, year_ago,
 )
 
 # ── Asset paths ───────────────────────────────────────────────────────────────
@@ -130,6 +130,18 @@ p, span, label, div, li,
 [data-testid="stMetricValue"] div,
 section[data-testid="stSidebar"] {
     font-family: var(--font-serif) !important;
+}
+/* ── Restore icon fonts overridden by the rule above ── */
+/* Streamlit uses Material Symbols for expander chevrons, button icons, etc. */
+span.material-symbols-rounded,
+span.material-symbols-outlined,
+span.material-symbols,
+span.material-icons,
+span.material-icons-outlined,
+[data-testid="stExpander"] summary span:first-child,
+[data-baseweb="icon"] span,
+button span[class*="material"] {
+    font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif !important;
 }
 
 /* ── Table data: keep tabular numerics crisp — only numbers / amounts ── */
@@ -666,50 +678,36 @@ def _squad_sorted_colleges(squad_name: str) -> list[str]:
 
 # ── Sidebar — part 2: navigation ─────────────────────────────────────────────
 _cur_page = st.session_state["_page"]
-_all_college_names = df_all["name"].tolist()
 
-_top_options = ["📊 Overview"] + [
-    f"{SQUAD_ICONS[sq]} {sq}" for sq in SQUAD_MAP
-]
-_top_id_map = {"📊 Overview": "overview"} | {
-    f"{SQUAD_ICONS[sq]} {sq}": _SQUAD_PAGE_IDS[sq] for sq in SQUAD_MAP
-}
-_top_active_opt = next((opt for opt, pid in _top_id_map.items() if pid == _cur_page), None)
-_top_idx        = _top_options.index(_top_active_opt) if _top_active_opt else None
+# Single flat nav list: Overview → 4 squads → all colleges A-Z
+_nav_squad_labels = [f"{SQUAD_ICONS[sq]} {sq}" for sq in SQUAD_MAP]
+_nav_college_names = sorted(df_all["name"].tolist())
+_nav_options = ["📊 Overview"] + _nav_squad_labels + _nav_college_names
+
+# Map every label → page id  (colleges map to themselves)
+_nav_id_map = (
+    {"📊 Overview": "overview"}
+    | {f"{SQUAD_ICONS[sq]} {sq}": _SQUAD_PAGE_IDS[sq] for sq in SQUAD_MAP}
+    | {name: name for name in _nav_college_names}
+)
+# Reverse: page id → label
+_nav_label_map = {pid: lbl for lbl, pid in _nav_id_map.items()}
+
+_nav_idx = _nav_options.index(_nav_label_map[_cur_page]) if _cur_page in _nav_label_map else 0
+
+def _on_nav_change():
+    choice = st.session_state.get("radio_nav")
+    if choice is not None:
+        _set_page(_nav_id_map[choice])
 
 with st.sidebar:
     st.divider()
-
-    # ── Overview + Squad pages ────────────────────────────────────────────────
     st.markdown('<div class="nav-section-label">Navigate</div>', unsafe_allow_html=True)
-    _top_choice = st.radio(
-        "_nav_top", _top_options, index=_top_idx,
-        key="radio_top", label_visibility="collapsed",
+    st.radio(
+        "_nav", _nav_options, index=_nav_idx,
+        key="radio_nav", label_visibility="collapsed",
+        on_change=_on_nav_change,
     )
-    if _top_choice is not None:
-        _new = _top_id_map[_top_choice]
-        if _new != _cur_page:
-            _set_page(_new)
-            st.rerun()
-
-    # ── Colleges listed squad-by-squad, sorted by priority within each squad ──
-    for _sq in SQUAD_MAP:
-        _sq_colleges = _squad_sorted_colleges(_sq)
-        if not _sq_colleges:
-            continue
-        st.markdown(
-            f'<div class="nav-section-label">{SQUAD_ICONS[_sq]} {_sq}</div>',
-            unsafe_allow_html=True,
-        )
-        _sq_idx = _sq_colleges.index(_cur_page) if _cur_page in _sq_colleges else None
-        _sq_choice = st.radio(
-            f"_nav_{_sq}", _sq_colleges, index=_sq_idx,
-            key=f"radio_{_sq}", label_visibility="collapsed",
-        )
-        if _sq_choice is not None and _sq_choice != _cur_page:
-            _set_page(_sq_choice)
-            st.rerun()
-
     st.divider()
     st.markdown(
         '<p style="font-size:11px;color:#475569">Source: Woolf Metabase · BigQuery'
@@ -764,6 +762,49 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
     df = df_all[df_all["revenue_model"].isin(model_filter)]
     if college_filter:
         df = df[df["name"].isin(college_filter)]
+
+    # ── Enrolment Funnel: ST → ST Converted → Enrolled ───────────────────────
+    _funnel_st_new   = int(df["st_new_this_month"].sum())
+    _funnel_st_till  = int(df["st_till_last_month"].sum())
+    _funnel_conv     = int(df["st_converted_this_month"].sum())
+    _funnel_enrol    = int(df["new_enrol"].sum())
+    _funnel_conv_rate = (
+        f"{round(_funnel_conv / _funnel_st_new * 100, 1)}%" if _funnel_st_new > 0 else "—"
+    )
+    _funnel_enrol_of_conv = (
+        f"{round(_funnel_enrol / _funnel_conv * 100, 1)}%" if _funnel_conv > 0 else "—"
+    )
+    st.markdown(
+        f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+        f'padding:12px 20px;margin:10px 0 16px;display:flex;align-items:center;'
+        f'gap:0;flex-wrap:wrap">'
+        f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
+        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0.5px;color:#6b7280">ST Students (till last month)</div>'
+        f'<div style="font-size:22px;font-weight:700;color:#111827">{_funnel_st_till:,}</div>'
+        f'</div>'
+        f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
+        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0.5px;color:#6b7280">New ST ({period})</div>'
+        f'<div style="font-size:22px;font-weight:700;color:#111827">{_funnel_st_new:,}</div>'
+        f'</div>'
+        f'<div style="padding:4px 12px;color:#9ca3af;font-size:18px">→</div>'
+        f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
+        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0.5px;color:#7c3aed">ST → Degree ({period})</div>'
+        f'<div style="font-size:22px;font-weight:700;color:#7c3aed">{_funnel_conv:,}</div>'
+        f'<div style="font-size:10px;color:#9ca3af">{_funnel_conv_rate} of new ST</div>'
+        f'</div>'
+        f'<div style="padding:4px 12px;color:#9ca3af;font-size:18px">→</div>'
+        f'<div style="text-align:center;padding:4px 20px">'
+        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0.5px;color:#1d4ed8">Enrolled ({period})</div>'
+        f'<div style="font-size:22px;font-weight:700;color:#1d4ed8">{_funnel_enrol:,}</div>'
+        f'<div style="font-size:10px;color:#9ca3af">{_funnel_enrol_of_conv} of converted</div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     # ── SEAT-BASED ────────────────────────────────────────────────────────────
     seat = df[df["revenue_model"] == "SEAT_BASED"]
@@ -1263,10 +1304,9 @@ def show_college_detail(college_name: str):
     st.divider()
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3 = st.tabs([
         "📈 Enrolment Trend",
         "📚 Study Track",
-        "🎓 Graduation",
         "🚀 Growth Levers",
     ])
 
@@ -1311,8 +1351,8 @@ def show_college_detail(college_name: str):
             st.bar_chart(st_df.set_index("month")[["new_st"]],
                          color="#7c3aed")
             st.caption(
-                "Study-track students = degree_students where "
-                "has_activity_before_invitation = true"
+                "New study-track enrolments per month (source: st_students table — "
+                "same as the ST New KPI above)"
             )
 
             # Quick conversion stats for current month
@@ -1330,16 +1370,8 @@ def show_college_detail(college_name: str):
             c3.metric(f"ST → Degree ({period})", this_st_conv,
                       delta=f"{conv_rate} conversion rate")
 
-    # ── Tab 3: Graduation ────────────────────────────────────────────────────
+    # ── Tab 3: Growth Levers ─────────────────────────────────────────────────
     with tab3:
-        st.markdown("### 🎓 Graduation Rate")
-        st.info(
-            "📋 **Coming soon** — graduation data requires the new degree-completion "
-            "table (pending Tech Team delivery to Metabase)."
-        )
-
-    # ── Tab 4: Growth Levers ─────────────────────────────────────────────────
-    with tab4:
         st.markdown("### 🚀 Growth Levers")
 
         new_enrol  = int(r["new_enrol"])

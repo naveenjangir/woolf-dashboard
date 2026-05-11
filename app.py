@@ -634,33 +634,23 @@ with st.sidebar:
     # ── Date selector — hard min: April 2026 ─────────────────────────────────
     _MIN_YEAR, _MIN_MONTH = 2026, 4   # April 2026 hard minimum
 
-    # Build list of valid (year, month) pairs from April 2026 → today
-    _valid_periods = [
-        (y, m)
-        for y in range(_MIN_YEAR, today.year + 1)
-        for m in range(1, 13)
-        if (y > _MIN_YEAR or m >= _MIN_MONTH)
-        and (y < today.year or m <= today.month)
-    ]
-    _period_labels = [f"{calendar.month_abbr[m]} {y}" for y, m in _valid_periods]
-    _default_idx   = len(_valid_periods) - 1   # default = current month
-
     c1, c2 = st.columns(2)
-    with c1:
-        sel_month = st.selectbox(
-            "Month", range(1, 13), index=today.month - 1,
-            format_func=lambda m: calendar.month_abbr[m])
     with c2:
-        years     = list(range(_MIN_YEAR, today.year + 1))
-        sel_year  = st.selectbox("Year", years, index=years.index(today.year))
+        _years    = list(range(_MIN_YEAR, today.year + 1))
+        sel_year  = st.selectbox("Year", _years, index=_years.index(today.year))
 
-    # Clamp selection to valid range
-    if (sel_year, sel_month) < (_MIN_YEAR, _MIN_MONTH):
-        sel_month = _MIN_MONTH
-        sel_year  = _MIN_YEAR
-    if (sel_year, sel_month) > (today.year, today.month):
-        sel_month = today.month
-        sel_year  = today.year
+    with c1:
+        # Month options depend on selected year:
+        # Min year (2026) → start from April; max year (today) → end at today.month
+        _month_min = _MIN_MONTH if sel_year == _MIN_YEAR else 1
+        _month_max = today.month if sel_year == today.year else 12
+        _valid_months = list(range(_month_min, _month_max + 1))
+        _default_month = today.month if sel_year == today.year else _month_max
+        _default_month = min(_default_month, _month_max)
+        sel_month = st.selectbox(
+            "Month", _valid_months,
+            index=_valid_months.index(_default_month),
+            format_func=lambda m: calendar.month_abbr[m])
     if st.button("🔄 Refresh data"):
         st.cache_data.clear()
         st.rerun()
@@ -1369,7 +1359,7 @@ def show_college_detail(college_name: str):
                         "month": "Month", "new_enrol": "New",
                         "pauses": "Paused", "archives": "Archived", "net": "Net ±",
                     }),
-                    hide_index=True, width="stretch",
+                    hide_index=True, use_container_width=True,
                 )
 
     # ── Tab 2: Study Track ────────────────────────────────────────────────────

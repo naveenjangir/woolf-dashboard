@@ -646,6 +646,39 @@ def get_graduation_data(college_id: str) -> dict:
     }
 
 
+# ── Revenue Overview: April 2026 invoice data ────────────────────────────────
+
+def _april_invoices() -> pd.DataFrame:
+    """
+    April 2026 invoice summary per college from the invoices table.
+
+    Returns two columns (indexed by college_id):
+      saas_fee             – monthly share of Q2 2026 SAAS fee
+                             (QUARTERLY invoice amount ÷ 3)
+      monthly_invoice_total– total MONTHLY invoiced amount for April 2026
+                             (actual figure from invoices — useful for validation
+                              against our calculated seat/growth estimates)
+
+    NOTE: college_id must exist directly on the invoices table for this query
+    to work.  If the column is missing the caller should catch the exception.
+    """
+    sql = """
+    SELECT
+      college_id,
+      ROUND(SUM(CASE WHEN kind = 'QUARTERLY' THEN amount / 3.0 ELSE 0 END), 0)
+            AS saas_fee,
+      ROUND(SUM(CASE WHEN kind = 'MONTHLY'   THEN amount         ELSE 0 END), 0)
+            AS monthly_invoice_total
+    FROM production.invoices
+    WHERE
+      (kind = 'QUARTERLY' AND DATE(created) BETWEEN '2026-04-01' AND '2026-06-30')
+      OR
+      (kind = 'MONTHLY'   AND DATE(created) BETWEEN '2026-04-01' AND '2026-04-30')
+    GROUP BY college_id
+    """
+    return run_query(sql).set_index("college_id")
+
+
 # ── Master loader ─────────────────────────────────────────────────────────────
 
 def load_all_colleges(year: int, month: int) -> pd.DataFrame:

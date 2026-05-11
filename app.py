@@ -702,14 +702,20 @@ def _squad_sorted_colleges(squad_name: str) -> list[str]:
 # ── Sidebar — part 2: navigation ─────────────────────────────────────────────
 _cur_page = st.session_state["_page"]
 
-# Single flat nav list: Overview → 4 squads → all colleges A-Z
+# Single flat nav list: Enrolment Overview → Revenue Overview → Overview → 4 squads → all colleges A-Z
 _nav_squad_labels = [f"{SQUAD_ICONS[sq]} {sq}" for sq in SQUAD_MAP]
 _nav_college_names = sorted(df_all["name"].tolist())
-_nav_options = ["📊 Overview"] + _nav_squad_labels + _nav_college_names
+_nav_options = (
+    ["📈 Enrolment Overview", "💰 Revenue Overview", "📊 Overview"]
+    + _nav_squad_labels
+    + _nav_college_names
+)
 
 # Map every label → page id  (colleges map to themselves)
 _nav_id_map = (
-    {"📊 Overview": "overview"}
+    {"📈 Enrolment Overview": "enrolment_overview",
+     "💰 Revenue Overview":   "revenue_overview",
+     "📊 Overview":           "overview"}
     | {f"{SQUAD_ICONS[sq]} {sq}": _SQUAD_PAGE_IDS[sq] for sq in SQUAD_MAP}
     | {name: name for name in _nav_college_names}
 )
@@ -740,6 +746,44 @@ with st.sidebar:
 
 # Resolve legacy `page` variable used by router below
 page = _cur_page
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: WORK IN PROGRESS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def show_wip(title: str, icon: str, colour: str):
+    """Render a Work in Progress placeholder page."""
+    if _MARK_DARK_PATH.exists():
+        mark_b64 = _img_b64(_MARK_DARK_PATH)
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:14px;margin-bottom:2px">'
+            f'<div style="background:{colour};border-radius:10px;width:44px;height:44px;'
+            f'display:inline-flex;align-items:center;justify-content:center;'
+            f'flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.18)">'
+            f'<img src="{mark_b64}" style="height:26px;width:auto"/>'
+            f'</div>'
+            f'<div>'
+            f'<div style="font-size:22px;font-weight:700;color:#111827;line-height:1.15">'
+            f'{icon} {title}</div>'
+            f'<div style="font-size:11px;color:#6b7280;letter-spacing:0.3px">Woolf · {period}</div>'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    st.divider()
+    st.markdown(
+        f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;'
+        f'padding:80px 20px;text-align:center">'
+        f'<div style="font-size:64px;margin-bottom:20px">🚧</div>'
+        f'<div style="font-size:24px;font-weight:700;color:#111827;margin-bottom:10px">'
+        f'Work in Progress</div>'
+        f'<div style="font-size:15px;color:#6b7280;max-width:420px;line-height:1.6">'
+        f'The <strong>{title}</strong> page is currently being built. '
+        f'Check back soon for updates.</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1469,7 +1513,11 @@ def show_college_detail(college_name: str):
 
 
 # ── Router ────────────────────────────────────────────────────────────────────
-if page == "overview":
+if page == "enrolment_overview":
+    show_wip("Enrolment Overview", "📈", "#0f766e")
+elif page == "revenue_overview":
+    show_wip("Revenue Overview", "💰", "#7c3aed")
+elif page == "overview":
     show_overview()
 elif page in _PAGE_ID_TO_SQUAD:
     sq = _PAGE_ID_TO_SQUAD[page]

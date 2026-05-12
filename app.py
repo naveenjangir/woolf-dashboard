@@ -1628,7 +1628,7 @@ def show_revenue_overview():
 
         # Status for each revenue head (quarterly covers SAAS+Seat; monthly covers Growth+Add)
         # wide_cols so the two-line amount+badge fits without truncation
-        COLS = ["College", "Invoice",
+        COLS = ["College",
                 "SAAS Fee ($)", fee_col_label,
                 "Growth ($)", "Add. Items ($)",
                 "Monthly Inv. ($)", "Total CV ($)"]
@@ -1651,7 +1651,6 @@ def show_revenue_overview():
 
             row = {
                 "College":          r["name"],
-                "Invoice":          r.get("invoice_name") or PENDING,
                 # Each revenue head: amount + its source invoice's status badge
                 "SAAS Fee ($)":     _cell(n_saas, q_status) if has_inv else PENDING,
                 fee_col_label:      _cell(n_fee,  q_status) if has_inv else PENDING,
@@ -1671,9 +1670,8 @@ def show_revenue_overview():
 
         # Totals row — no status badge on totals, just amounts
         tr = {c: "" for c in COLS}
-        tr["College"]          = "TOTAL"
-        tr["Invoice"]          = ""
-        tr["SAAS Fee ($)"]     = fmt_usd(tot["saas"])   if tot["saas"]   else PENDING
+        tr["College"]         = "TOTAL"
+        tr["SAAS Fee ($)"]    = fmt_usd(tot["saas"])   if tot["saas"]   else PENDING
         tr[fee_col_label]      = fmt_usd(tot["fee"])    if tot["fee"]    else PENDING
         tr["Growth ($)"]       = fmt_usd(tot["growth"]) if tot["growth"] else PENDING
         tr["Add. Items ($)"]   = fmt_usd(tot["add"])    if tot["add"]    else PENDING

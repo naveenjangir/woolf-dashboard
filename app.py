@@ -1776,16 +1776,20 @@ def show_enrolment_overview():
     _funnel_conv     = int(df["st_converted_this_month"].sum())
     _funnel_enrol    = int(df["new_enrol"].sum())
 
-    # Fetch supplementary metrics (WLH, ST age, admission type)
+    # Fetch supplementary metrics (WLH, ST age, admission type).
+    # conv_total and enrol_total come from the SAME query as their breakdowns
+    # so tile number == sum of breakdown parts — always arithmetically clean.
     _extras = get_funnel_extras_cached(sel_year, sel_month)
-    _wlh        = _extras.get("wlh_count", 0)
-    _age_0_3m   = _extras.get("age_0_3m",  0)
-    _age_3_6m   = _extras.get("age_3_6m",  0)
-    _age_6_12m  = _extras.get("age_6_12m", 0)
-    _age_12pm   = _extras.get("age_12pm",  0)
+    _wlh        = _extras.get("wlh_count",   0)
+    _age_0_3m   = _extras.get("age_0_3m",    0)
+    _age_3_6m   = _extras.get("age_3_6m",    0)
+    _age_6_12m  = _extras.get("age_6_12m",   0)
+    _age_12pm   = _extras.get("age_12pm",    0)
+    _conv_total = _extras.get("conv_total",  _funnel_conv)   # fallback to df total if query fails
     _adm_std    = _extras.get("adm_standard", 0)
     _adm_pba    = _extras.get("adm_pba",      0)
     _adm_rpl    = _extras.get("adm_rpl",      0)
+    _enrol_total= _extras.get("enrol_total", _funnel_enrol)  # fallback to df total if query fails
 
     # ST age subtitle for the ST→Degree tile
     _age_sub = (f'<span style="color:#7c3aed">0–3m: {_age_0_3m}</span>'
@@ -1825,7 +1829,7 @@ def show_enrolment_overview():
         f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
         f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
         f'letter-spacing:0.5px;color:#7c3aed">ST → Degree ({period})</div>'
-        f'<div style="font-size:22px;font-weight:700;color:#7c3aed">{_funnel_conv:,}</div>'
+        f'<div style="font-size:22px;font-weight:700;color:#7c3aed">{_conv_total:,}</div>'
         f'<div style="font-size:10px;margin-top:2px">{_age_sub}</div>'
         f'</div>'
         f'<div style="padding:4px 12px;color:#9ca3af;font-size:18px">→</div>'
@@ -1833,7 +1837,7 @@ def show_enrolment_overview():
         f'<div style="text-align:center;padding:4px 20px">'
         f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
         f'letter-spacing:0.5px;color:#1d4ed8">Enrolled ({period})</div>'
-        f'<div style="font-size:22px;font-weight:700;color:#1d4ed8">{_funnel_enrol:,}</div>'
+        f'<div style="font-size:22px;font-weight:700;color:#1d4ed8">{_enrol_total:,}</div>'
         f'<div style="font-size:10px;margin-top:2px">{_adm_sub}</div>'
         f'</div>'
         f'</div>',

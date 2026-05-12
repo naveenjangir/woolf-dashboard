@@ -671,15 +671,15 @@ def get_funnel_extras(year: int, month: int) -> dict:
 
     sql = f"""
     WITH
+    -- ── WLH: active ST students (not yet converted) with ≥25h workload ─────────
     st_wlh AS (
-      -- workload_count is stored in minutes; 25 WLH = 1500 min
-      -- degree_count = 0 excludes students already converted to a degree
       SELECT COUNT(*) AS cnt
       FROM production.st_students
       WHERE DATE(created) < '{first}'
-        AND workload_count >= 1500
-        AND degree_count = 0
+        AND workload_count >= 1500   -- 1500 min = 25 h (workload_count in minutes)
+        AND degree_count = 0         -- exclude already-converted students
     ),
+    -- ── ST→Degree age bands — total derived from the same join so sum = total ──
     st_age AS (
       SELECT
         CASE
@@ -690,33 +690,36 @@ def get_funnel_extras(year: int, month: int) -> dict:
         END AS band,
         COUNT(*) AS cnt
       FROM production.degree_students ds
-      JOIN production.students s      ON s.user_id      = ds.user_id
-      JOIN production.st_students sts ON sts.student_id = s.id
+      JOIN production.students     s   ON s.user_id      = ds.user_id
+      JOIN production.st_students  sts ON sts.student_id = s.id
       WHERE ds.has_activity_before_invitation = true
         AND DATE(ds.created) >= '{first}'
-        AND DATE(ds.created) < '{next_first}'
+        AND DATE(ds.created) <  '{next_first}'
       GROUP BY band
     ),
+    -- ── Admission type — total derived from same source so sum = total ─────────
     admission AS (
       SELECT
-        SUM(CASE WHEN is_pba_converted = true THEN 1 ELSE 0 END)  AS pba,
-        SUM(CASE WHEN rpl_exemption_request_id IS NOT NULL
-                      AND is_pba_converted = false THEN 1 ELSE 0 END) AS rpl,
-        SUM(CASE WHEN is_pba_converted = false
-                      AND rpl_exemption_request_id IS NULL THEN 1 ELSE 0 END) AS standard
+        SUM(CASE WHEN is_pba_converted = true                                        THEN 1 ELSE 0 END) AS pba,
+        SUM(CASE WHEN rpl_exemption_request_id IS NOT NULL AND is_pba_converted = false THEN 1 ELSE 0 END) AS rpl,
+        SUM(CASE WHEN is_pba_converted = false AND rpl_exemption_request_id IS NULL  THEN 1 ELSE 0 END) AS standard
       FROM production.degree_students
       WHERE DATE(created) >= '{first}'
-        AND DATE(created) < '{next_first}'
+        AND DATE(created) <  '{next_first}'
     )
     SELECT
-      (SELECT cnt FROM st_wlh)                              AS wlh_count,
-      (SELECT cnt FROM st_age WHERE band = '0-3m'  )        AS age_0_3m,
-      (SELECT cnt FROM st_age WHERE band = '3-6m'  )        AS age_3_6m,
-      (SELECT cnt FROM st_age WHERE band = '6-12m' )        AS age_6_12m,
-      (SELECT cnt FROM st_age WHERE band = '12+m'  )        AS age_12pm,
-      (SELECT standard FROM admission)                      AS adm_standard,
-      (SELECT pba      FROM admission)                      AS adm_pba,
-      (SELECT rpl      FROM admission)                      AS adm_rpl
+      (SELECT cnt                                        FROM st_wlh)             AS wlh_count,
+      -- ST age bands + their sum as the canonical tile-3 total
+      (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '0-3m' )                  AS age_0_3m,
+      (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '3-6m' )                  AS age_3_6m,
+      (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '6-12m')                  AS age_6_12m,
+      (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '12+m' )                  AS age_12pm,
+      (SELECT COALESCE(SUM(cnt),0)                       FROM st_age)             AS conv_total,
+      -- Admission breakdown + their sum as the canonical tile-4 total
+      (SELECT COALESCE(standard,0)                       FROM admission)          AS adm_standard,
+      (SELECT COALESCE(pba,0)                            FROM admission)          AS adm_pba,
+      (SELECT COALESCE(rpl,0)                            FROM admission)          AS adm_rpl,
+      (SELECT COALESCE(standard,0)+COALESCE(pba,0)+COALESCE(rpl,0) FROM admission) AS enrol_total
     """
     row = run_query(sql)
     if row.empty:
@@ -728,9 +731,11 @@ def get_funnel_extras(year: int, month: int) -> dict:
         "age_3_6m":     int(r.get("age_3_6m")     or 0),
         "age_6_12m":    int(r.get("age_6_12m")    or 0),
         "age_12pm":     int(r.get("age_12pm")     or 0),
+        "conv_total":   int(r.get("conv_total")   or 0),
         "adm_standard": int(r.get("adm_standard") or 0),
         "adm_pba":      int(r.get("adm_pba")      or 0),
         "adm_rpl":      int(r.get("adm_rpl")      or 0),
+        "enrol_total":  int(r.get("enrol_total")  or 0),
     }
 
 

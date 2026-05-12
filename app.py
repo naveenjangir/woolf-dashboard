@@ -16,6 +16,7 @@ from PIL import Image
 from queries import (
     load_all_colleges, get_college_trend, get_st_trend,
     get_graduation_data, prev_month, year_ago, _april_invoices,
+    get_funnel_extras,
 )
 
 # ── Asset paths ───────────────────────────────────────────────────────────────
@@ -605,6 +606,15 @@ def get_trend(college_id: str) -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_st_data(college_id: str) -> pd.DataFrame:
     return get_st_trend(college_id, months=14)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_funnel_extras_cached(year: int, month: int) -> dict:
+    """Cached wrapper for get_funnel_extras — returns {} on any error."""
+    try:
+        return get_funnel_extras(year, month)
+    except Exception:
+        return {}
 
 
 @st.cache_data(ttl=3600, show_spinner="📡 Loading April 2026 invoice data…")
@@ -1765,37 +1775,66 @@ def show_enrolment_overview():
     _funnel_st_new   = int(df["st_new_this_month"].sum())
     _funnel_conv     = int(df["st_converted_this_month"].sum())
     _funnel_enrol    = int(df["new_enrol"].sum())
-    _funnel_conv_rate      = (f"{round(_funnel_conv / _funnel_st_new * 100, 1)}%"
-                               if _funnel_st_new > 0 else "—")
-    _funnel_enrol_of_conv  = (f"{round(_funnel_enrol / _funnel_conv * 100, 1)}%"
-                               if _funnel_conv > 0 else "—")
+
+    # Fetch supplementary metrics (WLH, ST age, admission type)
+    _extras = get_funnel_extras_cached(sel_year, sel_month)
+    _wlh        = _extras.get("wlh_count", 0)
+    _age_0_3m   = _extras.get("age_0_3m",  0)
+    _age_3_6m   = _extras.get("age_3_6m",  0)
+    _age_6_12m  = _extras.get("age_6_12m", 0)
+    _age_12pm   = _extras.get("age_12pm",  0)
+    _adm_std    = _extras.get("adm_standard", 0)
+    _adm_pba    = _extras.get("adm_pba",      0)
+    _adm_rpl    = _extras.get("adm_rpl",      0)
+
+    # ST age subtitle for the ST→Degree tile
+    _age_sub = (f'<span style="color:#7c3aed">0–3m: {_age_0_3m}</span>'
+                f'<span style="color:#9ca3af"> · </span>'
+                f'<span style="color:#7c3aed">3–6m: {_age_3_6m}</span>'
+                f'<span style="color:#9ca3af"> · </span>'
+                f'<span style="color:#7c3aed">6–12m: {_age_6_12m}</span>'
+                f'<span style="color:#9ca3af"> · </span>'
+                f'<span style="color:#7c3aed">12+m: {_age_12pm}</span>')
+    # Admission type subtitle for the Enrolled tile
+    _adm_sub = (f'<span style="color:#1d4ed8">Std: {_adm_std}</span>'
+                f'<span style="color:#9ca3af"> · </span>'
+                f'<span style="color:#059669">PBA: {_adm_pba}</span>'
+                f'<span style="color:#9ca3af"> · </span>'
+                f'<span style="color:#d97706">RPL: {_adm_rpl}</span>')
+
     st.markdown(
         f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
         f'padding:12px 20px;margin:10px 0 16px;display:flex;align-items:center;'
         f'gap:0;flex-wrap:wrap">'
+        # ── Tile 1: ST Students till last month + WLH sub-metric ──
         f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
         f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
         f'letter-spacing:0.5px;color:#6b7280">ST Students (till last month)</div>'
         f'<div style="font-size:22px;font-weight:700;color:#111827">{_funnel_st_till:,}</div>'
+        f'<div style="font-size:10px;color:#0f766e;font-weight:600;margin-top:2px">'
+        f'⚡ &gt;25 WLH: {_wlh:,}</div>'
         f'</div>'
+        # ── Tile 2: New ST ──
         f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
         f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
         f'letter-spacing:0.5px;color:#6b7280">New ST ({period})</div>'
         f'<div style="font-size:22px;font-weight:700;color:#111827">{_funnel_st_new:,}</div>'
         f'</div>'
         f'<div style="padding:4px 12px;color:#9ca3af;font-size:18px">→</div>'
+        # ── Tile 3: ST→Degree + age bands ──
         f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
         f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
         f'letter-spacing:0.5px;color:#7c3aed">ST → Degree ({period})</div>'
         f'<div style="font-size:22px;font-weight:700;color:#7c3aed">{_funnel_conv:,}</div>'
-        f'<div style="font-size:10px;color:#9ca3af">{_funnel_conv_rate} of new ST</div>'
+        f'<div style="font-size:10px;margin-top:2px">{_age_sub}</div>'
         f'</div>'
         f'<div style="padding:4px 12px;color:#9ca3af;font-size:18px">→</div>'
+        # ── Tile 4: Enrolled + admission type ──
         f'<div style="text-align:center;padding:4px 20px">'
         f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
         f'letter-spacing:0.5px;color:#1d4ed8">Enrolled ({period})</div>'
         f'<div style="font-size:22px;font-weight:700;color:#1d4ed8">{_funnel_enrol:,}</div>'
-        f'<div style="font-size:10px;color:#9ca3af">{_funnel_enrol_of_conv} of converted</div>'
+        f'<div style="font-size:10px;margin-top:2px">{_adm_sub}</div>'
         f'</div>'
         f'</div>',
         unsafe_allow_html=True,

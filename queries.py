@@ -646,6 +646,91 @@ def get_graduation_data(college_id: str) -> dict:
     }
 
 
+# ── Enrolment Overview: funnel extras ────────────────────────────────────────
+
+def get_funnel_extras(year: int, month: int) -> dict:
+    """
+    Returns supplementary funnel metrics for the Enrolment Overview top banner.
+
+    Keys returned
+    ─────────────
+    wlh_count    : ST students (created before this month) with workload_count > 25
+    age_0_3m     : ST→Deg converters this month who were ST for < 3 months
+    age_3_6m     : 3–6 months
+    age_6_12m    : 6–12 months
+    age_12pm     : 12+ months
+    adm_standard : degree_students enrolled this month via standard admission
+    adm_pba      : via PBA (is_pba_converted = true)
+    adm_rpl      : via RPL (rpl_exemption_request_id IS NOT NULL)
+    """
+    first, _ = month_bounds(year, month)
+    if month == 12:
+        next_first = date(year + 1, 1, 1)
+    else:
+        next_first = date(year, month + 1, 1)
+
+    sql = f"""
+    WITH
+    st_wlh AS (
+      SELECT COUNT(*) AS cnt
+      FROM production.st_students
+      WHERE DATE(created) < '{first}'
+        AND workload_count > 25
+    ),
+    st_age AS (
+      SELECT
+        CASE
+          WHEN DATE_DIFF(DATE(ds.created), DATE(sts.created), DAY) < 90  THEN '0-3m'
+          WHEN DATE_DIFF(DATE(ds.created), DATE(sts.created), DAY) < 180 THEN '3-6m'
+          WHEN DATE_DIFF(DATE(ds.created), DATE(sts.created), DAY) < 365 THEN '6-12m'
+          ELSE '12+m'
+        END AS band,
+        COUNT(*) AS cnt
+      FROM production.degree_students ds
+      JOIN production.students s      ON s.user_id      = ds.user_id
+      JOIN production.st_students sts ON sts.student_id = s.id
+      WHERE ds.has_activity_before_invitation = true
+        AND DATE(ds.created) >= '{first}'
+        AND DATE(ds.created) < '{next_first}'
+      GROUP BY band
+    ),
+    admission AS (
+      SELECT
+        SUM(CASE WHEN is_pba_converted = true THEN 1 ELSE 0 END)  AS pba,
+        SUM(CASE WHEN rpl_exemption_request_id IS NOT NULL
+                      AND is_pba_converted = false THEN 1 ELSE 0 END) AS rpl,
+        SUM(CASE WHEN is_pba_converted = false
+                      AND rpl_exemption_request_id IS NULL THEN 1 ELSE 0 END) AS standard
+      FROM production.degree_students
+      WHERE DATE(created) >= '{first}'
+        AND DATE(created) < '{next_first}'
+    )
+    SELECT
+      (SELECT cnt FROM st_wlh)                              AS wlh_count,
+      (SELECT cnt FROM st_age WHERE band = '0-3m'  )        AS age_0_3m,
+      (SELECT cnt FROM st_age WHERE band = '3-6m'  )        AS age_3_6m,
+      (SELECT cnt FROM st_age WHERE band = '6-12m' )        AS age_6_12m,
+      (SELECT cnt FROM st_age WHERE band = '12+m'  )        AS age_12pm,
+      (SELECT standard FROM admission)                      AS adm_standard,
+      (SELECT pba      FROM admission)                      AS adm_pba,
+      (SELECT rpl      FROM admission)                      AS adm_rpl
+    """
+    row = run_query(sql)
+    if row.empty:
+        return {}
+    r = row.iloc[0]
+    return {
+        "wlh_count":    int(r.get("wlh_count")    or 0),
+        "age_0_3m":     int(r.get("age_0_3m")     or 0),
+        "age_3_6m":     int(r.get("age_3_6m")     or 0),
+        "age_6_12m":    int(r.get("age_6_12m")    or 0),
+        "age_12pm":     int(r.get("age_12pm")     or 0),
+        "adm_standard": int(r.get("adm_standard") or 0),
+        "adm_pba":      int(r.get("adm_pba")      or 0),
+        "adm_rpl":      int(r.get("adm_rpl")      or 0),
+    }
+
+
 # ── Revenue Overview: April 2026 invoice data ────────────────────────────────
 
 def _april_invoices() -> pd.DataFrame:

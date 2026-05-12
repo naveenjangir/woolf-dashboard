@@ -524,13 +524,15 @@ def _completion_rates_seasonal(year: int, month: int, through_day: int) -> pd.Da
       GROUP BY 1, 2
     ),
     rates AS (
-      SELECT college_id, mo, SAFE_DIVIDE(mtd_count, total_month) AS rate
+      SELECT college_id, mo, SAFE_DIVIDE(mtd_count, total_month) AS rate, total_month
       FROM hist
       WHERE total_month > 0
     ),
     -- Last 4 complete months momentum
     momentum AS (
-      SELECT college_id, AVG(rate) AS momentum_rate
+      SELECT college_id,
+             AVG(rate)         AS momentum_rate,
+             ROUND(AVG(total_month)) AS avg_full_month   -- historical avg enrolments/month
       FROM (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY college_id ORDER BY mo DESC) AS rn
         FROM rates
@@ -556,7 +558,8 @@ def _completion_rates_seasonal(year: int, month: int, through_day: int) -> pd.Da
       COALESCE(
         SAFE_MULTIPLY(m.momentum_rate, SAFE_DIVIDE(ys.y1_rate, yp.y1_prev_rate)),
         m.momentum_rate
-      ) AS completion_rate
+      ) AS completion_rate,
+      m.avg_full_month   -- fallback estimate for batch-importers (low completion rate)
     FROM momentum m
     LEFT JOIN y1_same ys ON ys.college_id = m.college_id
     LEFT JOIN y1_prev yp ON yp.college_id = m.college_id

@@ -479,13 +479,16 @@ def calc_variance(cur_enrol: int, proj, comp_rate) -> str:
     return fmt_variance(est_final - proj)
 
 
-def calc_eom_display(cur_enrol: int, proj, comp_rate) -> str:
+def calc_eom_display(cur_enrol: int, proj, comp_rate, avg_full_month=None) -> str:
     """
     Est. EOM column for Enrolment Overview:
     - Shows absolute estimated end-of-month number (no +/-)
     - Green (#16a34a) if est >= projection, red (#dc2626) if below
     - Subtext: 'X% of proj'
-    - Falls back to MTD count (marked *) when completion rate is unreliable
+    - When completion rate is reliable (≥25%): est = MTD / completion_rate
+    - When rate is unreliable (batch-importers with back-loaded enrolments):
+        uses historical avg full-month count as estimate (marked *),
+        never falls back to MTD alone (which would be misleadingly low)
     - Returns PENDING if no projection set
     """
     if proj is None:
@@ -493,7 +496,9 @@ def calc_eom_display(cur_enrol: int, proj, comp_rate) -> str:
     proj_i = int(proj)
     cr = _fee(comp_rate)
     if cr is None or cr < _MIN_COMPLETION_RATE:
-        est  = cur_enrol
+        # Batch-importer fallback: use historical avg full month if available
+        afm = _fee(avg_full_month)
+        est  = round(afm) if (afm and afm > cur_enrol) else cur_enrol
         star = "*"
     else:
         est  = round(cur_enrol / cr)
@@ -1957,7 +1962,7 @@ def show_enrolment_overview():
 
         cols = ["College", active_lbl, proj_lbl, cur_lbl, eom_lbl,
                 paused_col, archived_col, net_col,
-                vsm1_lbl, vsy1_lbl,
+                m1_lbl, vsm1_lbl, y1_lbl, vsy1_lbl,
                 "ST Till", "ST >25h", "ST New", "ST→Deg",
                 "PBA", "RPL Adm",
                 "RPL <20", "RPL ≥20", "Oxford SBS"]
@@ -1972,7 +1977,9 @@ def show_enrolment_overview():
         for _, r in seat.iterrows():
             proj      = proj_month.get(r["name"])
             cur_enrol = int(r["new_enrol"])
-            eom_html  = calc_eom_display(cur_enrol, proj, r.get("completion_rate"))
+            eom_html  = calc_eom_display(cur_enrol, proj,
+                                         r.get("completion_rate"),
+                                         r.get("avg_full_month"))
 
             row = {
                 "College":    sn(r["name"]),
@@ -1983,7 +1990,9 @@ def show_enrolment_overview():
                 paused_col:   int(r["pauses_m1"]),
                 archived_col: int(r["archives_m1"]),
                 net_col:      int(r["net_additions"]),
+                m1_lbl:       int(r["new_enrol_m1"]),
                 vsm1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_m1_mtd"]),
+                y1_lbl:       int(r["new_enrol_y1"]),
                 vsy1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_y1_mtd"]),
                 "ST Till":    int(r["st_till_last_month"]),
                 "ST >25h":    int(r.get("st_wlh_count", 0)),
@@ -2000,15 +2009,21 @@ def show_enrolment_overview():
             _t["active"]   += int(r["active_base"] or 0)
             _t["proj"]     += int(proj) if proj is not None else 0
             _t["cur"]      += cur_enrol
-            cr = _fee(r.get("completion_rate"))
-            _t["eom_est"]  += round(cur_enrol / cr) if (cr and cr >= _MIN_COMPLETION_RATE) else cur_enrol
+            cr  = _fee(r.get("completion_rate"))
+            afm = _fee(r.get("avg_full_month"))
+            if cr and cr >= _MIN_COMPLETION_RATE:
+                _t["eom_est"] += round(cur_enrol / cr)
+            elif afm and afm > cur_enrol:
+                _t["eom_est"] += round(afm)
+            else:
+                _t["eom_est"] += cur_enrol
             _t["pauses"]   += int(r["pauses_m1"])
             _t["archives"] += int(r["archives_m1"])
             _t["net"]      += int(r["net_additions"])
-            _t["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
-            _t["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
             _t["m1"]       += int(r["new_enrol_m1"])
+            _t["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
             _t["y1"]       += int(r["new_enrol_y1"])
+            _t["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
             _t["st_till"]  += int(r["st_till_last_month"])
             _t["st_wlh"]   += int(r.get("st_wlh_count", 0))
             _t["st_new"]   += int(r["st_new_this_month"])
@@ -2027,13 +2042,18 @@ def show_enrolment_overview():
         if _t["proj"]:
             _eom_color = "#16a34a" if _t["eom_est"] >= _t["proj"] else "#dc2626"
             _eom_pct = round(_t["eom_est"] / _t["proj"] * 100)
-            tr[eom_lbl] = f"<span style='color:{_eom_color};font-weight:600'>{_t['eom_est']}</span><br><span style='font-size:10px;font-weight:400;color:#9ca3af'>{_eom_pct}% of proj</span>"
+            tr[eom_lbl] = (f"<span style='color:{_eom_color};font-weight:600'>"
+                           f"{_t['eom_est']}</span>"
+                           f"<br><span style='font-size:10px;font-weight:400;"
+                           f"color:#9ca3af'>{_eom_pct}% of proj</span>")
         else:
             tr[eom_lbl] = PENDING
         tr[paused_col]   = _t["pauses"]
         tr[archived_col] = _t["archives"]
         tr[net_col]      = _t["net"]
+        tr[m1_lbl]       = _t["m1"]
         tr[vsm1_lbl]     = delta_detail(_t["cur"], _t["m1_mtd"])
+        tr[y1_lbl]       = _t["y1"]
         tr[vsy1_lbl]     = delta_detail(_t["cur"], _t["y1_mtd"])
         tr["ST Till"]    = _t["st_till"]
         tr["ST >25h"]    = _t["st_wlh"]
@@ -2047,7 +2067,7 @@ def show_enrolment_overview():
         rows.append(tr)
 
         st.markdown(html_table(rows, cols,
-                               wide_cols={vsm1_lbl, vsy1_lbl, eom_lbl},
+                               wide_cols={vsm1_lbl, vsy1_lbl},
                                narrow_cols={"College"},
                                total_row=True),
                     unsafe_allow_html=True)
@@ -2057,10 +2077,11 @@ def show_enrolment_overview():
             f'{proj_lbl} = manual Q2 forecast · '
             f'{cur_lbl} = {"enrolments so far this month" if is_current_month else "full month enrolments"} '
             f'(day 1–{today.day if is_current_month else _last_day_sel}) · '
-            f'Est. EOM = MTD ÷ seasonal completion rate (last 4 months + Y-1 seasonality) · '
+            f'Est. EOM = MTD ÷ seasonal rate (* = back-loader, uses hist. avg) · '
+            f'{m1_lbl} / {y1_lbl} = full prior-month totals · '
             f'vs columns = {"MTD comparison" if is_current_month else "full period comparison"} · '
             f'Paused/Archived = {pm_short} {py} prior-month exits · '
-            f'RPL Adm = admitted via RPL pathway (degree_student_services)'
+            f'RPL Adm = admitted via RPL pathway'
             '</div>',
             unsafe_allow_html=True)
 
@@ -2098,7 +2119,7 @@ def show_enrolment_overview():
 
         cols = ["College", proj_lbl, cur_lbl, eom_lbl,
                 "Arch ≤30d", net_col,
-                vsm1_lbl, vsy1_lbl,
+                m1_lbl, vsm1_lbl, y1_lbl, vsy1_lbl,
                 "ST Till", "ST >25h", "ST New", "ST→Deg",
                 "PBA", "RPL Adm",
                 "RPL <20", "RPL ≥20", "Oxford SBS"]
@@ -2113,7 +2134,9 @@ def show_enrolment_overview():
         for _, r in revsh.iterrows():
             proj      = proj_month.get(r["name"])
             cur_enrol = int(r["new_enrol"])
-            eom_html  = calc_eom_display(cur_enrol, proj, r.get("completion_rate"))
+            eom_html  = calc_eom_display(cur_enrol, proj,
+                                         r.get("completion_rate"),
+                                         r.get("avg_full_month"))
 
             row = {
                 "College":    sn(r["name"]),
@@ -2122,7 +2145,9 @@ def show_enrolment_overview():
                 eom_lbl:      eom_html,
                 "Arch ≤30d":  int(r["archived_30d"]),
                 net_col:      int(r["net_revsh"]),
+                m1_lbl:       int(r["new_enrol_m1"]),
                 vsm1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_m1_mtd"]),
+                y1_lbl:       int(r["new_enrol_y1"]),
                 vsy1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_y1_mtd"]),
                 "ST Till":    int(r["st_till_last_month"]),
                 "ST >25h":    int(r.get("st_wlh_count", 0)),
@@ -2138,14 +2163,20 @@ def show_enrolment_overview():
 
             _rt["proj"]     += int(proj) if proj is not None else 0
             _rt["cur"]      += cur_enrol
-            cr = _fee(r.get("completion_rate"))
-            _rt["eom_enrol"] += round(cur_enrol / cr) if (cr and cr >= _MIN_COMPLETION_RATE) else cur_enrol
+            cr  = _fee(r.get("completion_rate"))
+            afm = _fee(r.get("avg_full_month"))
+            if cr and cr >= _MIN_COMPLETION_RATE:
+                _rt["eom_enrol"] += round(cur_enrol / cr)
+            elif afm and afm > cur_enrol:
+                _rt["eom_enrol"] += round(afm)
+            else:
+                _rt["eom_enrol"] += cur_enrol
             _rt["arch_30d"] += int(r["archived_30d"])
             _rt["net"]      += int(r["net_revsh"])
-            _rt["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
-            _rt["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
             _rt["m1"]       += int(r["new_enrol_m1"])
+            _rt["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
             _rt["y1"]       += int(r["new_enrol_y1"])
+            _rt["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
             _rt["st_till"]  += int(r["st_till_last_month"])
             _rt["st_wlh"]   += int(r.get("st_wlh_count", 0))
             _rt["st_new"]   += int(r["st_new_this_month"])
@@ -2163,12 +2194,17 @@ def show_enrolment_overview():
         if _rt["proj"]:
             _eom_color_r = "#16a34a" if _rt["eom_enrol"] >= _rt["proj"] else "#dc2626"
             _eom_pct_r = round(_rt["eom_enrol"] / _rt["proj"] * 100)
-            _rtr[eom_lbl] = f"<span style='color:{_eom_color_r};font-weight:600'>{_rt['eom_enrol']}</span><br><span style='font-size:10px;font-weight:400;color:#9ca3af'>{_eom_pct_r}% of proj</span>"
+            _rtr[eom_lbl] = (f"<span style='color:{_eom_color_r};font-weight:600'>"
+                             f"{_rt['eom_enrol']}</span>"
+                             f"<br><span style='font-size:10px;font-weight:400;"
+                             f"color:#9ca3af'>{_eom_pct_r}% of proj</span>")
         else:
             _rtr[eom_lbl] = PENDING
         _rtr["Arch ≤30d"]  = _rt["arch_30d"]
         _rtr[net_col]      = _rt["net"]
+        _rtr[m1_lbl]       = _rt["m1"]
         _rtr[vsm1_lbl]     = delta_detail(_rt["cur"], _rt["m1_mtd"])
+        _rtr[y1_lbl]       = _rt["y1"]
         _rtr[vsy1_lbl]     = delta_detail(_rt["cur"], _rt["y1_mtd"])
         _rtr["ST Till"]    = _rt["st_till"]
         _rtr["ST >25h"]    = _rt["st_wlh"]
@@ -2182,7 +2218,7 @@ def show_enrolment_overview():
         rows.append(_rtr)
 
         st.markdown(html_table(rows, cols,
-                               wide_cols={vsm1_lbl, vsy1_lbl, eom_lbl},
+                               wide_cols={vsm1_lbl, vsy1_lbl},
                                narrow_cols={"College"},
                                total_row=True),
                     unsafe_allow_html=True)
@@ -2191,7 +2227,8 @@ def show_enrolment_overview():
             f'{proj_lbl} = manual Q2 forecast · '
             f'{cur_lbl} = {"enrolments so far this month" if is_current_month else "full month enrolments"} '
             f'(day 1–{today.day if is_current_month else _last_day_sel}) · '
-            f'Est. EOM = MTD ÷ seasonal completion rate · '
+            f'Est. EOM = MTD ÷ seasonal rate (* = back-loader, uses hist. avg) · '
+            f'{m1_lbl} / {y1_lbl} = full prior-month totals · '
             f'vs columns = {"MTD comparison" if is_current_month else "full period comparison"} · '
             f'Arch ≤30d = enrolled within last 30 days, now archived (refund window) · '
             f'RPL Adm = admitted via RPL pathway'

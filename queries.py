@@ -9,6 +9,50 @@ import calendar
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from metabase import run_query
+import pickle
+import time
+from pathlib import Path
+
+# ── Disk query cache ──────────────────────────────────────────────────────────
+# Pickle files keyed by (function, args). Survive page reloads and cross-user
+# requests within the running Railway container. Reset only on redeploy.
+# Each cached function declares its own max_age_hours.
+
+_CACHE_DIR = Path(__file__).parent / ".query_cache"
+_CACHE_DIR.mkdir(exist_ok=True)
+
+
+def _cache_get(key: str, max_age_hours: float):
+    """Return cached DataFrame if file exists and is younger than max_age_hours, else None."""
+    f = _CACHE_DIR / f"{key}.pkl"
+    if f.exists() and (time.time() - f.stat().st_mtime) / 3600 < max_age_hours:
+        try:
+            with open(f, "rb") as fp:
+                return pickle.load(fp)
+        except Exception:
+            pass   # corrupt file — fall through to re-query
+    return None
+
+
+def _cache_set(key: str, df) -> None:
+    """Persist a DataFrame (or dict) to disk cache."""
+    f = _CACHE_DIR / f"{key}.pkl"
+    try:
+        with open(f, "wb") as fp:
+            pickle.dump(df, fp)
+    except Exception:
+        pass   # non-fatal — just won't cache
+
+
+def _dcache(key: str, max_age_hours: float, fn, *args):
+    """Check disk cache; run fn(*args) and cache result on miss."""
+    hit = _cache_get(key, max_age_hours)
+    if hit is not None:
+        return hit
+    result = fn(*args)
+    _cache_set(key, result)
+    return result
+
 
 OXFORD_SBS_COURSE_NAMES = [
     "Business Essentials: The Complete Enterprise Toolkit - I",
@@ -41,6 +85,10 @@ def year_ago(year: int, month: int):
 # ── 1. Colleges ───────────────────────────────────────────────────────────────
 
 def get_colleges() -> pd.DataFrame:
+    return _dcache("get_colleges", 168.0, _get_colleges_query)
+
+
+def _get_colleges_query() -> pd.DataFrame:
     return run_query("""
     SELECT id, name, revenue_model
     FROM production.orgs
@@ -51,25 +99,44 @@ def get_colleges() -> pd.DataFrame:
 
 # ── Individual bulk queries (each returns college_id-indexed DataFrame) ───────
 
-def _all_activity_counts(year: int, month: int,
-                         py: int, pm: int,
-                         yy1: int, my1: int,
-                         today_day: int) -> pd.DataFrame:
+def _current_activity_counts(year: int, month: int) -> pd.DataFrame:
     """
-    Single activities table scan covering all 5 date windows:
-      - Current month       → new_enrol, pauses, archives
-      - M-1 full month      → new_enrol_m1, pauses_m1, archives_m1
-      - M-1 MTD-capped      → new_enrol_m1_mtd  (apple-to-apple vs comparison)
-      - Y-1 full month      → new_enrol_y1
-      - Y-1 MTD-capped      → new_enrol_y1_mtd  (apple-to-apple vs comparison)
-
-    Replaces 5 separate queries (_activity_counts ×3, _activity_counts_mtd ×2).
-    BigQuery scans the table once from the earliest needed date → much faster.
+    Current-month enrolment/pause/archive events only.
+    Always queries live — this is the fast-changing data users care about most.
     """
-    first,    last    = month_bounds(year,  month)
-    m1_first, m1_last = month_bounds(py,    pm)
-    y1_first, y1_last = month_bounds(yy1,   my1)
+    first, last = month_bounds(year, month)
+    sql = f"""
+    SELECT
+      college_id,
+      COUNTIF(kind = 'addDegreeStudent')     AS new_enrol,
+      COUNTIF(kind = 'pauseDegreeStudent')   AS pauses,
+      COUNTIF(kind = 'archiveDegreeStudent') AS archives
+    FROM production.activities
+    WHERE kind IN ('addDegreeStudent','pauseDegreeStudent','archiveDegreeStudent')
+      AND DATE(created) BETWEEN '{first}' AND '{last}'
+    GROUP BY college_id
+    """
+    return run_query(sql).set_index("college_id")
 
+
+def _historical_activity_counts(year: int, month: int,
+                                 py: int, pm: int,
+                                 yy1: int, my1: int,
+                                 today_day: int) -> pd.DataFrame:
+    """
+    M-1 and Y-1 activity counts. Once a month ends its data is frozen forever.
+    Disk-cached for 720 h (30 days) so these queries run once per month at most.
+    """
+    key = f"hist_acts_{py}_{pm}_{yy1}_{my1}_{today_day}"
+    return _dcache(key, 720.0, _historical_activity_counts_query,
+                   py, pm, yy1, my1, today_day)
+
+
+def _historical_activity_counts_query(py: int, pm: int,
+                                       yy1: int, my1: int,
+                                       today_day: int) -> pd.DataFrame:
+    m1_first, m1_last = month_bounds(py,  pm)
+    y1_first, y1_last = month_bounds(yy1, my1)
     m1_cap_day = min(today_day, calendar.monthrange(py,  pm)[1])
     y1_cap_day = min(today_day, calendar.monthrange(yy1, my1)[1])
     m1_cap = date(py,  pm,  m1_cap_day)
@@ -78,23 +145,16 @@ def _all_activity_counts(year: int, month: int,
     sql = f"""
     SELECT
       college_id,
-      -- Current month
-      COUNTIF(kind = 'addDegreeStudent'     AND DATE(created) BETWEEN '{first}'    AND '{last}')     AS new_enrol,
-      COUNTIF(kind = 'pauseDegreeStudent'   AND DATE(created) BETWEEN '{first}'    AND '{last}')     AS pauses,
-      COUNTIF(kind = 'archiveDegreeStudent' AND DATE(created) BETWEEN '{first}'    AND '{last}')     AS archives,
-      -- M-1 full month
       COUNTIF(kind = 'addDegreeStudent'     AND DATE(created) BETWEEN '{m1_first}' AND '{m1_last}')  AS new_enrol_m1,
       COUNTIF(kind = 'pauseDegreeStudent'   AND DATE(created) BETWEEN '{m1_first}' AND '{m1_last}')  AS pauses_m1,
       COUNTIF(kind = 'archiveDegreeStudent' AND DATE(created) BETWEEN '{m1_first}' AND '{m1_last}')  AS archives_m1,
-      -- M-1 MTD-capped (day 1–{today_day} of M-1 vs day 1–{today_day} of current)
       COUNTIF(kind = 'addDegreeStudent'     AND DATE(created) BETWEEN '{m1_first}' AND '{m1_cap}')   AS new_enrol_m1_mtd,
-      -- Y-1 full month
       COUNTIF(kind = 'addDegreeStudent'     AND DATE(created) BETWEEN '{y1_first}' AND '{y1_last}')  AS new_enrol_y1,
-      -- Y-1 MTD-capped
       COUNTIF(kind = 'addDegreeStudent'     AND DATE(created) BETWEEN '{y1_first}' AND '{y1_cap}')   AS new_enrol_y1_mtd
     FROM production.activities
     WHERE kind IN ('addDegreeStudent','pauseDegreeStudent','archiveDegreeStudent')
       AND DATE(created) >= '{y1_first}'
+      AND DATE(created) <= '{m1_last}'
     GROUP BY college_id
     """
     return run_query(sql).set_index("college_id")
@@ -164,6 +224,11 @@ def _active_base(year: int, month: int) -> pd.DataFrame:
 
 
 def _seat_exp_revenue(year: int, month: int) -> pd.DataFrame:
+    key = f"_seat_exp_revenue_{year}_{month}"
+    return _dcache(key, 24.0, _seat_exp_revenue_query, year, month)
+
+
+def _seat_exp_revenue_query(year: int, month: int) -> pd.DataFrame:
     """
     Expected monthly seat revenue per college = SUM(active_students_per_degree × seat_fee).
 
@@ -220,6 +285,11 @@ def _seat_exp_revenue(year: int, month: int) -> pd.DataFrame:
 
 
 def _st_new_counts(year: int, month: int) -> pd.DataFrame:
+    key = f"_st_new_counts_{year}_{month}"
+    return _dcache(key, 24.0, _st_new_counts_query, year, month)
+
+
+def _st_new_counts_query(year: int, month: int) -> pd.DataFrame:
     """
     Study-track enrolment counts from the canonical st_students table.
     Joins st_students → students (via student_id = students.id) to get college_id.
@@ -242,6 +312,11 @@ def _st_new_counts(year: int, month: int) -> pd.DataFrame:
 
 
 def _st_conv_pba_counts(year: int, month: int) -> pd.DataFrame:
+    key = f"_st_conv_pba_counts_{year}_{month}"
+    return _dcache(key, 24.0, _st_conv_pba_counts_query, year, month)
+
+
+def _st_conv_pba_counts_query(year: int, month: int) -> pd.DataFrame:
     """
     Single degree_students scan returning both:
       st_converted_this_month  – ST→Degree conversions this month
@@ -265,6 +340,11 @@ def _st_conv_pba_counts(year: int, month: int) -> pd.DataFrame:
 
 
 def _revsh_exp_revenue(year: int, month: int) -> pd.DataFrame:
+    key = f"_revsh_exp_revenue_{year}_{month}"
+    return _dcache(key, 24.0, _revsh_exp_revenue_query, year, month)
+
+
+def _revsh_exp_revenue_query(year: int, month: int) -> pd.DataFrame:
     """
     Per-college expected revenue for revenue-share colleges this month.
 
@@ -411,6 +491,11 @@ def _revsh_exp_revenue(year: int, month: int) -> pd.DataFrame:
 
 
 def _revsh_archived_30d(year: int, month: int) -> pd.DataFrame:
+    key = f"_revsh_archived_30d_{year}_{month}"
+    return _dcache(key, 24.0, _revsh_archived_30d_query, year, month)
+
+
+def _revsh_archived_30d_query(year: int, month: int) -> pd.DataFrame:
     """
     Revenue-share 30-day refund window: students currently archived who enrolled
     within the last 30 days of month-end.  Fast single-table scan (~6s).
@@ -428,6 +513,11 @@ def _revsh_archived_30d(year: int, month: int) -> pd.DataFrame:
 
 
 def _rpl_counts(year: int, month: int) -> pd.DataFrame:
+    key = f"_rpl_counts_{year}_{month}"
+    return _dcache(key, 24.0, _rpl_counts_query, year, month)
+
+
+def _rpl_counts_query(year: int, month: int) -> pd.DataFrame:
     first, last = month_bounds(year, month)
     sql = f"""
     SELECT
@@ -444,6 +534,11 @@ def _rpl_counts(year: int, month: int) -> pd.DataFrame:
 
 
 def _rpl_admissions(year: int, month: int) -> pd.DataFrame:
+    key = f"_rpl_admissions_{year}_{month}"
+    return _dcache(key, 24.0, _rpl_admissions_query, year, month)
+
+
+def _rpl_admissions_query(year: int, month: int) -> pd.DataFrame:
     """
     Per-college count of students admitted via RPL pathway this month.
 
@@ -478,6 +573,11 @@ def _rpl_admissions(year: int, month: int) -> pd.DataFrame:
 
 
 def _st_wlh_by_college(year: int, month: int) -> pd.DataFrame:
+    key = f"_st_wlh_by_college_{year}_{month}"
+    return _dcache(key, 720.0, _st_wlh_by_college_query, year, month)
+
+
+def _st_wlh_by_college_query(year: int, month: int) -> pd.DataFrame:
     """
     Per-college count of ST students with ≥25h workload (1500 min) who have not
     yet converted to a degree (degree_count = 0), created before selected month.
@@ -497,6 +597,11 @@ def _st_wlh_by_college(year: int, month: int) -> pd.DataFrame:
 
 
 def _completion_rates_seasonal(year: int, month: int, through_day: int) -> pd.DataFrame:
+    key = f"completion_rates_{year}_{month}_{through_day}"
+    return _dcache(key, 24.0, _completion_rates_seasonal_query, year, month, through_day)
+
+
+def _completion_rates_seasonal_query(year: int, month: int, through_day: int) -> pd.DataFrame:
     """
     Per-college seasonality-aware completion rate.
 
@@ -569,6 +674,11 @@ def _completion_rates_seasonal(year: int, month: int, through_day: int) -> pd.Da
 
 
 def _oxford_sbs(year: int, month: int) -> pd.DataFrame:
+    key = f"_oxford_sbs_{year}_{month}"
+    return _dcache(key, 24.0, _oxford_sbs_query, year, month)
+
+
+def _oxford_sbs_query(year: int, month: int) -> pd.DataFrame:
     first, last = month_bounds(year, month)
     sql = f"""
     SELECT c.college_id, COUNT(*) AS oxford_sbs
@@ -584,6 +694,10 @@ def _oxford_sbs(year: int, month: int) -> pd.DataFrame:
 # ── Pricing / fee configuration ───────────────────────────────────────────────
 
 def get_pricing_config() -> pd.DataFrame:
+    return _dcache("get_pricing_config", 168.0, _get_pricing_config_query)
+
+
+def _get_pricing_config_query() -> pd.DataFrame:
     """
     Per-college fee configuration from the latest subscription phase.
 
@@ -936,8 +1050,10 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
     today_day = today.day if is_current else calendar.monthrange(year, month)[1]
 
     tasks = {
-        # ── Single activities scan covers this/m1/y1/m1_mtd/y1_mtd (was 5 queries) ──
-        "activity":    (_all_activity_counts,       (year, month, py, pm, yy1, my1, today_day)),
+        # ── Current month: always live ────────────────────────────────────────────
+        "cur_acts":    (_current_activity_counts,   (year, month)),
+        # ── M-1 / Y-1 historical: disk-cached for 30 days ────────────────────────
+        "hist_acts":   (_historical_activity_counts,(year, month, py, pm, yy1, my1, today_day)),
         "colleges":    (get_colleges,               ()),
         "active_base": (_active_base,               (year, month)),
         "seat_rev":    (_seat_exp_revenue,          (year, month)),
@@ -952,7 +1068,7 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
         "completion":  (_completion_rates_seasonal, (year, month, today_day)),
         # rpl_adm + st_wlh excluded — Enrolment Overview only, loaded via
         # load_enrolment_extras() to avoid slowing down all other pages.
-        # Total: 12 parallel queries
+        # Total: 12 parallel queries (cur_acts + hist_acts replace activity = same count)
     }
 
     results = {}
@@ -966,7 +1082,7 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
     df = colleges.copy()
 
     # ── Join count/activity data first, then fillna(0) for numeric counts ──
-    for key in ["activity", "active_base", "st_new", "st_conv_pba", "rpl", "oxford", "arch30d"]:
+    for key in ["cur_acts", "hist_acts", "active_base", "st_new", "st_conv_pba", "rpl", "oxford", "arch30d"]:
         df = df.join(results[key], how="left")
 
     df = df.fillna(0)

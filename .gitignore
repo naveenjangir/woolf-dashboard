@@ -11,3 +11,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Disk query cache (pickle files, never commit)
+.query_cache/

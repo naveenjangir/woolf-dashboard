@@ -937,26 +937,26 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
 
     tasks = {
         # ── Single activities scan covers this/m1/y1/m1_mtd/y1_mtd (was 5 queries) ──
-        "activity":    (_all_activity_counts,    (year, month, py, pm, yy1, my1, today_day)),
-        "colleges":    (get_colleges,            ()),
-        "active_base": (_active_base,            (year, month)),
-        "seat_rev":    (_seat_exp_revenue,       (year, month)),
-        "st_new":      (_st_new_counts,          (year, month)),
+        "activity":    (_all_activity_counts,       (year, month, py, pm, yy1, my1, today_day)),
+        "colleges":    (get_colleges,               ()),
+        "active_base": (_active_base,               (year, month)),
+        "seat_rev":    (_seat_exp_revenue,          (year, month)),
+        "st_new":      (_st_new_counts,             (year, month)),
         # ── Single degree_students scan for ST conversions + PBA (was 2 queries) ──
-        "st_conv_pba": (_st_conv_pba_counts,     (year, month)),
-        "rpl":         (_rpl_counts,             (year, month)),
-        "oxford":      (_oxford_sbs,             (year, month)),
-        "arch30d":     (_revsh_archived_30d,     (year, month)),
-        "revsh_rev":   (_revsh_exp_revenue,      (year, month)),
-        "pricing":     (get_pricing_config,      ()),
+        "st_conv_pba": (_st_conv_pba_counts,        (year, month)),
+        "rpl":         (_rpl_counts,                (year, month)),
+        "oxford":      (_oxford_sbs,                (year, month)),
+        "arch30d":     (_revsh_archived_30d,        (year, month)),
+        "revsh_rev":   (_revsh_exp_revenue,         (year, month)),
+        "pricing":     (get_pricing_config,         ()),
         "completion":  (_completion_rates_seasonal, (year, month, today_day)),
-        "rpl_adm":     (_rpl_admissions,            (year, month)),
-        "st_wlh":      (_st_wlh_by_college,         (year, month)),
-        # Total: 14 parallel queries
+        # rpl_adm + st_wlh excluded — Enrolment Overview only, loaded via
+        # load_enrolment_extras() to avoid slowing down all other pages.
+        # Total: 12 parallel queries
     }
 
     results = {}
-    with ThreadPoolExecutor(max_workers=14) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         futures = {pool.submit(fn, *args): key for key, (fn, args) in tasks.items()}
         for future in as_completed(futures):
             key = futures[future]
@@ -966,7 +966,7 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
     df = colleges.copy()
 
     # ── Join count/activity data first, then fillna(0) for numeric counts ──
-    for key in ["activity", "active_base", "st_new", "st_conv_pba", "rpl", "oxford", "arch30d", "rpl_adm", "st_wlh"]:
+    for key in ["activity", "active_base", "st_new", "st_conv_pba", "rpl", "oxford", "arch30d"]:
         df = df.join(results[key], how="left")
 
     df = df.fillna(0)
@@ -987,3 +987,30 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
     df["net_revsh"] = df["new_enrol"] - df["archived_30d"]
 
     return df.reset_index().rename(columns={"index": "college_id", "id": "college_id"})
+
+
+def load_enrolment_extras(year: int, month: int) -> pd.DataFrame:
+    """
+    Enrolment-Overview-only supplementary columns: RPL admissions and ST >25h WLH.
+    Runs in parallel, returns a college_id-indexed DataFrame with two columns:
+      rpl_admission   – students admitted via RPL pathway this month
+      st_wlh_count    – ST students with ≥25h workload (not yet converted)
+    Called separately so it doesn't slow down the main load for other pages.
+    """
+    tasks = {
+        "rpl_adm": (_rpl_admissions,    (year, month)),
+        "st_wlh":  (_st_wlh_by_college, (year, month)),
+    }
+    results = {}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {pool.submit(fn, *args): key for key, (fn, args) in tasks.items()}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+
+    # Build empty base and join both results
+    rpl = results["rpl_adm"]
+    wlh = results["st_wlh"]
+    df = rpl.join(wlh, how="outer").fillna(0)
+    df["rpl_admission"] = df["rpl_admission"].astype(int)
+    df["st_wlh_count"]  = df["st_wlh_count"].astype(int)
+    return df

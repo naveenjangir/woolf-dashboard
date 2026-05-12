@@ -14,7 +14,7 @@ import streamlit.components.v1 as st_components
 from PIL import Image
 
 from queries import (
-    load_all_colleges, get_college_trend, get_st_trend,
+    load_all_colleges, load_enrolment_extras, get_college_trend, get_st_trend,
     get_graduation_data, prev_month, year_ago, _april_invoices,
     get_funnel_extras,
 )
@@ -695,6 +695,19 @@ def get_funnel_extras_cached(year: int, month: int) -> dict:
         return get_funnel_extras(year, month)
     except Exception:
         return {}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_enrolment_extras_cached(year: int, month: int) -> pd.DataFrame:
+    """
+    Cached wrapper for load_enrolment_extras (RPL admissions + ST >25h per college).
+    Loaded separately from the main data so it only runs on the Enrolment Overview page.
+    Returns an empty DataFrame on error (columns still render as 0).
+    """
+    try:
+        return load_enrolment_extras(year, month)
+    except Exception:
+        return pd.DataFrame(columns=["rpl_admission", "st_wlh_count"])
 
 
 @st.cache_data(ttl=3600, show_spinner="📡 Loading April 2026 invoice data…")
@@ -1848,7 +1861,16 @@ def show_enrolment_overview():
             unsafe_allow_html=True,
         )
 
-    df = df_all[df_all["revenue_model"].isin(model_filter)]
+    df = df_all[df_all["revenue_model"].isin(model_filter)].copy()
+
+    # ── Merge enrolment-only extras (RPL admissions + ST >25h WLH per college) ──
+    # Loaded separately so the main data load stays at 12 queries for all pages.
+    _enrol_extras = get_enrolment_extras_cached(sel_year, sel_month)
+    if not _enrol_extras.empty and "college_id" in df.columns:
+        df = df.set_index("college_id").join(_enrol_extras, how="left")
+        df["rpl_admission"] = df["rpl_admission"].fillna(0).astype(int)
+        df["st_wlh_count"]  = df["st_wlh_count"].fillna(0).astype(int)
+        df = df.reset_index()
 
     # ── Enrolment Funnel Banner ────────────────────────────────────────────────
     _funnel_st_till  = int(df["st_till_last_month"].sum())

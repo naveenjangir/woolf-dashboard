@@ -479,6 +479,33 @@ def calc_variance(cur_enrol: int, proj, comp_rate) -> str:
     return fmt_variance(est_final - proj)
 
 
+def calc_eom_display(cur_enrol: int, proj, comp_rate) -> str:
+    """
+    Est. EOM column for Enrolment Overview:
+    - Shows absolute estimated end-of-month number (no +/-)
+    - Green (#16a34a) if est >= projection, red (#dc2626) if below
+    - Subtext: 'X% of proj'
+    - Falls back to MTD count (marked *) when completion rate is unreliable
+    - Returns PENDING if no projection set
+    """
+    if proj is None:
+        return PENDING
+    proj_i = int(proj)
+    cr = _fee(comp_rate)
+    if cr is None or cr < _MIN_COMPLETION_RATE:
+        est  = cur_enrol
+        star = "*"
+    else:
+        est  = round(cur_enrol / cr)
+        star = ""
+    color = "#16a34a" if est >= proj_i else "#dc2626"
+    sub = ""
+    if proj_i > 0:
+        pct = round(est / proj_i * 100)
+        sub = f"<br><span style='font-size:10px;font-weight:400;color:#9ca3af'>{pct}% of proj</span>"
+    return f"<span style='color:{color};font-weight:600'>{est}{star}</span>{sub}"
+
+
 # ── Revenue helpers ───────────────────────────────────────────────────────────
 
 def _fee(val):
@@ -592,23 +619,30 @@ def total_rev(*components) -> str:
 def html_table(rows: list, cols: list,
                labels: dict | None = None,
                wide_cols: set | None = None,
+               narrow_cols: set | None = None,
                total_row: bool = False) -> str:
     """
     Render data as a styled HTML table.
 
-    wide_cols: set of column keys that should be wider than the default 68px.
-               Used for vs-MTD columns that contain 2-line delta+raw content.
+    wide_cols:   set of column keys that should be wider than the default 68px.
+                 Used for vs-MTD columns that contain 2-line delta+raw content.
+    narrow_cols: set of column keys that should be constrained to 100px.
     """
     lbl = labels or {}
     wc  = set(wide_cols or [])
+    nc  = set(narrow_cols or [])
 
-    # Wide columns get explicit inline width to override table-layout:fixed default
+    # Wide/narrow columns get explicit inline width to override table-layout:fixed default
     def th_style(c):
-        return ' style="width:108px;min-width:108px"' if c in wc else ""
+        if c in wc: return ' style="width:108px;min-width:108px"'
+        if c in nc: return ' style="width:100px;min-width:100px;max-width:100px"'
+        return ""
 
     def td_style(c):
         # white-space:normal allows the <br> sub-line to wrap properly in wide cells
-        return ' style="width:108px;min-width:108px;white-space:normal;line-height:1.35"' if c in wc else ""
+        if c in wc: return ' style="width:108px;min-width:108px;white-space:normal;line-height:1.35"'
+        if c in nc: return ' style="width:100px;min-width:100px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"'
+        return ""
 
     ths  = "".join(f"<th{th_style(c)}>{lbl.get(c, c)}</th>" for c in cols)
     body = ""
@@ -1919,104 +1953,102 @@ def show_enrolment_overview():
         archived_col = f"Archived ({pm_short} {py})"
         net_col      = f"Net ± ({period})"
 
-        cols = ["College", active_lbl, proj_lbl, cur_lbl,
-                m1_lbl, y1_lbl, vsm1_lbl, vsy1_lbl, "Est. EOM vs Proj",
-                paused_col, archived_col, net_col]
-        if show_st:
-            cols += ["ST Till", "ST New", "ST→Deg"]
-        if show_rpl:
-            cols += ["RPL <20", "RPL ≥20", "PBA"]
-        if show_oxford:
-            cols += ["Oxford SBS"]
+        eom_lbl = "Est. EOM"
 
-        _t = dict(active=0, proj=0, cur=0, m1=0, y1=0, m1_mtd=0, y1_mtd=0,
-                  eom_est=0, pauses=0, archives=0, net=0,
-                  st_till=0, st_new=0, st_conv=0,
-                  rpl_low=0, rpl_high=0, pba=0, oxford=0)
+        cols = ["College", active_lbl, proj_lbl, cur_lbl, eom_lbl,
+                paused_col, archived_col, net_col,
+                vsm1_lbl, vsy1_lbl,
+                "ST Till", "ST >25h", "ST New", "ST→Deg",
+                "PBA", "RPL Adm",
+                "RPL <20", "RPL ≥20", "Oxford SBS"]
+
+        _t = dict(active=0, proj=0, cur=0, eom_est=0,
+                  pauses=0, archives=0, net=0,
+                  m1_mtd=0, y1_mtd=0, m1=0, y1=0,
+                  st_till=0, st_wlh=0, st_new=0, st_conv=0,
+                  pba=0, rpl_adm=0,
+                  rpl_low=0, rpl_high=0, oxford=0)
         rows = []
         for _, r in seat.iterrows():
             proj      = proj_month.get(r["name"])
             cur_enrol = int(r["new_enrol"])
-            var_str   = calc_variance(cur_enrol, proj, r.get("completion_rate"))
+            eom_html  = calc_eom_display(cur_enrol, proj, r.get("completion_rate"))
 
             row = {
-                "College":          sn(r["name"]),
-                active_lbl:         safe_int(r["active_base"]),
-                proj_lbl:           proj if proj is not None else PENDING,
-                cur_lbl:            cur_enrol,
-                m1_lbl:             int(r["new_enrol_m1"]),
-                y1_lbl:             int(r["new_enrol_y1"]),
-                vsm1_lbl:           delta_detail(r["new_enrol"], r["new_enrol_m1_mtd"]),
-                vsy1_lbl:           delta_detail(r["new_enrol"], r["new_enrol_y1_mtd"]),
-                "Est. EOM vs Proj": var_str,
-                paused_col:         int(r["pauses_m1"]),
-                archived_col:       int(r["archives_m1"]),
-                net_col:            int(r["net_additions"]),
+                "College":    sn(r["name"]),
+                active_lbl:   safe_int(r["active_base"]),
+                proj_lbl:     proj if proj is not None else PENDING,
+                cur_lbl:      cur_enrol,
+                eom_lbl:      eom_html,
+                paused_col:   int(r["pauses_m1"]),
+                archived_col: int(r["archives_m1"]),
+                net_col:      int(r["net_additions"]),
+                vsm1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_m1_mtd"]),
+                vsy1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_y1_mtd"]),
+                "ST Till":    int(r["st_till_last_month"]),
+                "ST >25h":    int(r.get("st_wlh_count", 0)),
+                "ST New":     int(r["st_new_this_month"]),
+                "ST→Deg":     int(r["st_converted_this_month"]),
+                "PBA":        int(r["pba_count"]),
+                "RPL Adm":    int(r.get("rpl_admission", 0)),
+                "RPL <20":    int(r["rpl_low"]),
+                "RPL ≥20":    int(r["rpl_high"]),
+                "Oxford SBS": int(r["oxford_sbs"]),
             }
-            if show_st:
-                row.update({"ST Till": int(r["st_till_last_month"]),
-                            "ST New":  int(r["st_new_this_month"]),
-                            "ST→Deg":  int(r["st_converted_this_month"])})
-            if show_rpl:
-                row.update({"RPL <20": int(r["rpl_low"]),
-                            "RPL ≥20": int(r["rpl_high"]),
-                            "PBA":     int(r["pba_count"])})
-            if show_oxford:
-                row["Oxford SBS"] = int(r["oxford_sbs"])
             rows.append(row)
 
-            ab = _fee(r.get("active_base"))
-            _t["active"]   += int(ab) if ab is not None else 0
+            _t["active"]   += int(r["active_base"] or 0)
             _t["proj"]     += int(proj) if proj is not None else 0
             _t["cur"]      += cur_enrol
-            _t["m1"]       += int(r["new_enrol_m1"])
-            _t["y1"]       += int(r["new_enrol_y1"])
-            _t["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
-            _t["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
             cr = _fee(r.get("completion_rate"))
             _t["eom_est"]  += round(cur_enrol / cr) if (cr and cr >= _MIN_COMPLETION_RATE) else cur_enrol
             _t["pauses"]   += int(r["pauses_m1"])
             _t["archives"] += int(r["archives_m1"])
             _t["net"]      += int(r["net_additions"])
-            if show_st:
-                _t["st_till"] += int(r["st_till_last_month"])
-                _t["st_new"]  += int(r["st_new_this_month"])
-                _t["st_conv"] += int(r["st_converted_this_month"])
-            if show_rpl:
-                _t["rpl_low"]  += int(r["rpl_low"])
-                _t["rpl_high"] += int(r["rpl_high"])
-                _t["pba"]      += int(r["pba_count"])
-            if show_oxford:
-                _t["oxford"] += int(r["oxford_sbs"])
+            _t["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
+            _t["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
+            _t["m1"]       += int(r["new_enrol_m1"])
+            _t["y1"]       += int(r["new_enrol_y1"])
+            _t["st_till"]  += int(r["st_till_last_month"])
+            _t["st_wlh"]   += int(r.get("st_wlh_count", 0))
+            _t["st_new"]   += int(r["st_new_this_month"])
+            _t["st_conv"]  += int(r["st_converted_this_month"])
+            _t["pba"]      += int(r["pba_count"])
+            _t["rpl_adm"]  += int(r.get("rpl_admission", 0))
+            _t["rpl_low"]  += int(r["rpl_low"])
+            _t["rpl_high"] += int(r["rpl_high"])
+            _t["oxford"]   += int(r["oxford_sbs"])
 
-        _eom_var = fmt_variance(_t["eom_est"] - _t["proj"]) if _t["proj"] else ""
         tr = {c: "" for c in cols}
-        tr["College"]          = "TOTAL"
-        tr[active_lbl]         = _t["active"]
-        tr[proj_lbl]           = _t["proj"] if _t["proj"] else PENDING
-        tr[cur_lbl]            = _t["cur"]
-        tr[m1_lbl]             = _t["m1"]
-        tr[y1_lbl]             = _t["y1"]
-        tr[vsm1_lbl]           = delta_detail(_t["cur"], _t["m1_mtd"])
-        tr[vsy1_lbl]           = delta_detail(_t["cur"], _t["y1_mtd"])
-        tr["Est. EOM vs Proj"] = _eom_var
-        tr[paused_col]         = _t["pauses"]
-        tr[archived_col]       = _t["archives"]
-        tr[net_col]            = _t["net"]
-        if show_st:
-            tr["ST Till"] = _t["st_till"]
-            tr["ST New"]  = _t["st_new"]
-            tr["ST→Deg"]  = _t["st_conv"]
-        if show_rpl:
-            tr["RPL <20"] = _t["rpl_low"]
-            tr["RPL ≥20"] = _t["rpl_high"]
-            tr["PBA"]     = _t["pba"]
-        if show_oxford:
-            tr["Oxford SBS"] = _t["oxford"]
+        tr["College"]    = "TOTAL"
+        tr[active_lbl]   = _t["active"]
+        tr[proj_lbl]     = _t["proj"] if _t["proj"] else PENDING
+        tr[cur_lbl]      = _t["cur"]
+        if _t["proj"]:
+            _eom_color = "#16a34a" if _t["eom_est"] >= _t["proj"] else "#dc2626"
+            _eom_pct = round(_t["eom_est"] / _t["proj"] * 100)
+            tr[eom_lbl] = f"<span style='color:{_eom_color};font-weight:600'>{_t['eom_est']}</span><br><span style='font-size:10px;font-weight:400;color:#9ca3af'>{_eom_pct}% of proj</span>"
+        else:
+            tr[eom_lbl] = PENDING
+        tr[paused_col]   = _t["pauses"]
+        tr[archived_col] = _t["archives"]
+        tr[net_col]      = _t["net"]
+        tr[vsm1_lbl]     = delta_detail(_t["cur"], _t["m1_mtd"])
+        tr[vsy1_lbl]     = delta_detail(_t["cur"], _t["y1_mtd"])
+        tr["ST Till"]    = _t["st_till"]
+        tr["ST >25h"]    = _t["st_wlh"]
+        tr["ST New"]     = _t["st_new"]
+        tr["ST→Deg"]     = _t["st_conv"]
+        tr["PBA"]        = _t["pba"]
+        tr["RPL Adm"]    = _t["rpl_adm"]
+        tr["RPL <20"]    = _t["rpl_low"]
+        tr["RPL ≥20"]    = _t["rpl_high"]
+        tr["Oxford SBS"] = _t["oxford"]
         rows.append(tr)
 
         st.markdown(html_table(rows, cols,
-                               wide_cols={vsm1_lbl, vsy1_lbl},
+                               wide_cols={vsm1_lbl, vsy1_lbl, eom_lbl},
+                               narrow_cols={"College"},
                                total_row=True),
                     unsafe_allow_html=True)
         st.markdown(
@@ -2025,9 +2057,10 @@ def show_enrolment_overview():
             f'{proj_lbl} = manual Q2 forecast · '
             f'{cur_lbl} = {"enrolments so far this month" if is_current_month else "full month enrolments"} '
             f'(day 1–{today.day if is_current_month else _last_day_sel}) · '
+            f'Est. EOM = MTD ÷ seasonal completion rate (last 4 months + Y-1 seasonality) · '
             f'vs columns = {"MTD comparison" if is_current_month else "full period comparison"} · '
-            'Est. EOM vs Proj = MTD ÷ seasonal rate minus projected · '
-            f'Paused/Archived = {pm_short} {py} prior-month exits'
+            f'Paused/Archived = {pm_short} {py} prior-month exits · '
+            f'RPL Adm = admitted via RPL pathway (degree_student_services)'
             '</div>',
             unsafe_allow_html=True)
 
@@ -2060,97 +2093,97 @@ def show_enrolment_overview():
                       .drop(columns=["_s1","_s2","_s3"]))
 
         net_col = f"Net ({period})"
-        cols = ["College", proj_lbl, cur_lbl, m1_lbl, y1_lbl,
-                vsm1_lbl, vsy1_lbl, "Est. EOM vs Proj", "Arch ≤30d", net_col]
-        if show_st:
-            cols += ["ST Till", "ST New", "ST→Deg"]
-        if show_rpl:
-            cols += ["RPL <20", "RPL ≥20", "PBA"]
-        if show_oxford:
-            cols += ["Oxford SBS"]
 
-        _rt = dict(proj=0, cur=0, m1=0, y1=0, m1_mtd=0, y1_mtd=0,
-                   eom_enrol=0, arch_30d=0, net=0,
-                   st_till=0, st_new=0, st_conv=0,
-                   rpl_low=0, rpl_high=0, pba=0, oxford=0)
+        eom_lbl = "Est. EOM"
+
+        cols = ["College", proj_lbl, cur_lbl, eom_lbl,
+                "Arch ≤30d", net_col,
+                vsm1_lbl, vsy1_lbl,
+                "ST Till", "ST >25h", "ST New", "ST→Deg",
+                "PBA", "RPL Adm",
+                "RPL <20", "RPL ≥20", "Oxford SBS"]
+
+        _rt = dict(proj=0, cur=0, eom_enrol=0,
+                   arch_30d=0, net=0,
+                   m1_mtd=0, y1_mtd=0, m1=0, y1=0,
+                   st_till=0, st_wlh=0, st_new=0, st_conv=0,
+                   pba=0, rpl_adm=0,
+                   rpl_low=0, rpl_high=0, oxford=0)
         rows = []
         for _, r in revsh.iterrows():
             proj      = proj_month.get(r["name"])
             cur_enrol = int(r["new_enrol"])
-            var_str   = calc_variance(cur_enrol, proj, r.get("completion_rate"))
+            eom_html  = calc_eom_display(cur_enrol, proj, r.get("completion_rate"))
 
             row = {
-                "College":          sn(r["name"]),
-                proj_lbl:           proj if proj is not None else PENDING,
-                cur_lbl:            cur_enrol,
-                m1_lbl:             int(r["new_enrol_m1"]),
-                y1_lbl:             int(r["new_enrol_y1"]),
-                vsm1_lbl:           delta_detail(r["new_enrol"], r["new_enrol_m1_mtd"]),
-                vsy1_lbl:           delta_detail(r["new_enrol"], r["new_enrol_y1_mtd"]),
-                "Est. EOM vs Proj": var_str,
-                "Arch ≤30d":        int(r["archived_30d"]),
-                net_col:            int(r["net_revsh"]),
+                "College":    sn(r["name"]),
+                proj_lbl:     proj if proj is not None else PENDING,
+                cur_lbl:      cur_enrol,
+                eom_lbl:      eom_html,
+                "Arch ≤30d":  int(r["archived_30d"]),
+                net_col:      int(r["net_revsh"]),
+                vsm1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_m1_mtd"]),
+                vsy1_lbl:     delta_detail(r["new_enrol"], r["new_enrol_y1_mtd"]),
+                "ST Till":    int(r["st_till_last_month"]),
+                "ST >25h":    int(r.get("st_wlh_count", 0)),
+                "ST New":     int(r["st_new_this_month"]),
+                "ST→Deg":     int(r["st_converted_this_month"]),
+                "PBA":        int(r["pba_count"]),
+                "RPL Adm":    int(r.get("rpl_admission", 0)),
+                "RPL <20":    int(r["rpl_low"]),
+                "RPL ≥20":    int(r["rpl_high"]),
+                "Oxford SBS": int(r["oxford_sbs"]),
             }
-            if show_st:
-                row.update({"ST Till": int(r["st_till_last_month"]),
-                            "ST New":  int(r["st_new_this_month"]),
-                            "ST→Deg":  int(r["st_converted_this_month"])})
-            if show_rpl:
-                row.update({"RPL <20": int(r["rpl_low"]),
-                            "RPL ≥20": int(r["rpl_high"]),
-                            "PBA":     int(r["pba_count"])})
-            if show_oxford:
-                row["Oxford SBS"] = int(r["oxford_sbs"])
             rows.append(row)
 
-            if proj is not None:
-                _rt["proj"] += int(proj)
+            _rt["proj"]     += int(proj) if proj is not None else 0
             _rt["cur"]      += cur_enrol
-            _rt["m1"]       += int(r["new_enrol_m1"])
-            _rt["y1"]       += int(r["new_enrol_y1"])
-            _rt["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
-            _rt["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
-            _rt["arch_30d"] += int(r["archived_30d"])
-            _rt["net"]      += int(r["net_revsh"])
             cr = _fee(r.get("completion_rate"))
             _rt["eom_enrol"] += round(cur_enrol / cr) if (cr and cr >= _MIN_COMPLETION_RATE) else cur_enrol
-            if show_st:
-                _rt["st_till"] += int(r["st_till_last_month"])
-                _rt["st_new"]  += int(r["st_new_this_month"])
-                _rt["st_conv"] += int(r["st_converted_this_month"])
-            if show_rpl:
-                _rt["rpl_low"]  += int(r["rpl_low"])
-                _rt["rpl_high"] += int(r["rpl_high"])
-                _rt["pba"]      += int(r["pba_count"])
-            if show_oxford:
-                _rt["oxford"] += int(r["oxford_sbs"])
+            _rt["arch_30d"] += int(r["archived_30d"])
+            _rt["net"]      += int(r["net_revsh"])
+            _rt["m1_mtd"]   += int(r["new_enrol_m1_mtd"])
+            _rt["y1_mtd"]   += int(r["new_enrol_y1_mtd"])
+            _rt["m1"]       += int(r["new_enrol_m1"])
+            _rt["y1"]       += int(r["new_enrol_y1"])
+            _rt["st_till"]  += int(r["st_till_last_month"])
+            _rt["st_wlh"]   += int(r.get("st_wlh_count", 0))
+            _rt["st_new"]   += int(r["st_new_this_month"])
+            _rt["st_conv"]  += int(r["st_converted_this_month"])
+            _rt["pba"]      += int(r["pba_count"])
+            _rt["rpl_adm"]  += int(r.get("rpl_admission", 0))
+            _rt["rpl_low"]  += int(r["rpl_low"])
+            _rt["rpl_high"] += int(r["rpl_high"])
+            _rt["oxford"]   += int(r["oxford_sbs"])
 
-        _eom_var_revsh = fmt_variance(_rt["eom_enrol"] - _rt["proj"]) if _rt["proj"] else ""
         _rtr = {c: "" for c in cols}
-        _rtr["College"]          = "TOTAL"
-        _rtr[proj_lbl]           = _rt["proj"] if _rt["proj"] else PENDING
-        _rtr[cur_lbl]            = _rt["cur"]
-        _rtr[m1_lbl]             = _rt["m1"]
-        _rtr[y1_lbl]             = _rt["y1"]
-        _rtr[vsm1_lbl]           = delta_detail(_rt["cur"], _rt["m1_mtd"])
-        _rtr[vsy1_lbl]           = delta_detail(_rt["cur"], _rt["y1_mtd"])
-        _rtr["Est. EOM vs Proj"] = _eom_var_revsh
-        _rtr["Arch ≤30d"]        = _rt["arch_30d"]
-        _rtr[net_col]            = _rt["net"]
-        if show_st:
-            _rtr["ST Till"] = _rt["st_till"]
-            _rtr["ST New"]  = _rt["st_new"]
-            _rtr["ST→Deg"]  = _rt["st_conv"]
-        if show_rpl:
-            _rtr["RPL <20"] = _rt["rpl_low"]
-            _rtr["RPL ≥20"] = _rt["rpl_high"]
-            _rtr["PBA"]     = _rt["pba"]
-        if show_oxford:
-            _rtr["Oxford SBS"] = _rt["oxford"]
+        _rtr["College"]    = "TOTAL"
+        _rtr[proj_lbl]     = _rt["proj"] if _rt["proj"] else PENDING
+        _rtr[cur_lbl]      = _rt["cur"]
+        if _rt["proj"]:
+            _eom_color_r = "#16a34a" if _rt["eom_enrol"] >= _rt["proj"] else "#dc2626"
+            _eom_pct_r = round(_rt["eom_enrol"] / _rt["proj"] * 100)
+            _rtr[eom_lbl] = f"<span style='color:{_eom_color_r};font-weight:600'>{_rt['eom_enrol']}</span><br><span style='font-size:10px;font-weight:400;color:#9ca3af'>{_eom_pct_r}% of proj</span>"
+        else:
+            _rtr[eom_lbl] = PENDING
+        _rtr["Arch ≤30d"]  = _rt["arch_30d"]
+        _rtr[net_col]      = _rt["net"]
+        _rtr[vsm1_lbl]     = delta_detail(_rt["cur"], _rt["m1_mtd"])
+        _rtr[vsy1_lbl]     = delta_detail(_rt["cur"], _rt["y1_mtd"])
+        _rtr["ST Till"]    = _rt["st_till"]
+        _rtr["ST >25h"]    = _rt["st_wlh"]
+        _rtr["ST New"]     = _rt["st_new"]
+        _rtr["ST→Deg"]     = _rt["st_conv"]
+        _rtr["PBA"]        = _rt["pba"]
+        _rtr["RPL Adm"]    = _rt["rpl_adm"]
+        _rtr["RPL <20"]    = _rt["rpl_low"]
+        _rtr["RPL ≥20"]    = _rt["rpl_high"]
+        _rtr["Oxford SBS"] = _rt["oxford"]
         rows.append(_rtr)
 
         st.markdown(html_table(rows, cols,
-                               wide_cols={vsm1_lbl, vsy1_lbl},
+                               wide_cols={vsm1_lbl, vsy1_lbl, eom_lbl},
+                               narrow_cols={"College"},
                                total_row=True),
                     unsafe_allow_html=True)
         st.markdown(
@@ -2158,9 +2191,10 @@ def show_enrolment_overview():
             f'{proj_lbl} = manual Q2 forecast · '
             f'{cur_lbl} = {"enrolments so far this month" if is_current_month else "full month enrolments"} '
             f'(day 1–{today.day if is_current_month else _last_day_sel}) · '
+            f'Est. EOM = MTD ÷ seasonal completion rate · '
             f'vs columns = {"MTD comparison" if is_current_month else "full period comparison"} · '
-            'Est. EOM vs Proj = MTD ÷ seasonal rate minus projected · '
-            'Arch ≤30d = enrolled within last 30 days, now archived (refund window)'
+            f'Arch ≤30d = enrolled within last 30 days, now archived (refund window) · '
+            f'RPL Adm = admitted via RPL pathway'
             '</div>',
             unsafe_allow_html=True)
 

@@ -444,51 +444,112 @@ def _rpl_counts(year: int, month: int) -> pd.DataFrame:
 
 
 def _rpl_admissions(year: int, month: int) -> pd.DataFrame:
-    first, last = month_bounds(year, month)
+    """
+    Per-college count of students admitted via RPL pathway this month.
+    Source: degree_student_services.rpl (DATE) — fast with date-range filter.
+    Distinct from rpl_exemption_requests (credit exemptions after admission).
+    """
+    first, _ = month_bounds(year, month)
+    if month == 12:
+        next_first = date(year + 1, 1, 1)
+    else:
+        next_first = date(year, month + 1, 1)
+
     sql = f"""
-    SELECT
-      ds.college_id,
-      COUNT(*) AS rpl_admissions
+    SELECT ds.college_id, COUNT(*) AS rpl_admission
     FROM production.degree_student_services dss
-    JOIN production.degree_students ds ON dss.degree_student_id = ds.id
+    JOIN production.degree_students ds ON ds.id = dss.degree_student_id
     WHERE dss.rpl IS NOT NULL
-      AND DATE(dss.rpl) BETWEEN '{first}' AND '{last}'
+      AND dss.rpl >= '{first}'
+      AND dss.rpl <  '{next_first}'
     GROUP BY ds.college_id
     """
     return run_query(sql).set_index("college_id")
 
 
-def _completion_rates(through_day: int) -> pd.DataFrame:
+def _st_wlh_by_college(year: int, month: int) -> pd.DataFrame:
     """
-    Per-college seasonal completion rate: average of (MTD_enrol / full_month_enrol)
-    over the last 6 complete calendar months.
-
-    Used to project the likely full-month total from the current MTD count:
-        estimated_final = current_enrol / completion_rate
-        variance        = estimated_final − projected
-
-    Only months where total_month > 0 are included.  Returns NULL (NaN) for
-    colleges with no historical data in the window.
+    Per-college count of ST students with ≥25h workload (1500 min) who have not
+    yet converted to a degree (degree_count = 0), created before selected month.
     """
+    first, _ = month_bounds(year, month)
+
     sql = f"""
-    WITH past_months AS (
+    SELECT s.college_id, COUNT(*) AS st_wlh_count
+    FROM production.st_students sts
+    JOIN production.students s ON s.id = sts.student_id
+    WHERE DATE(sts.created) < '{first}'
+      AND sts.workload_count >= 1500
+      AND sts.degree_count = 0
+    GROUP BY s.college_id
+    """
+    return run_query(sql).set_index("college_id")
+
+
+def _completion_rates_seasonal(year: int, month: int, through_day: int) -> pd.DataFrame:
+    """
+    Per-college seasonality-aware completion rate.
+
+    Formula:
+      momentum_rate   = avg(MTD/full) over the last 4 complete months
+      seasonal_factor = (Y-1 same-month rate) ÷ (Y-1 preceding-4-months avg rate)
+      completion_rate = momentum_rate × seasonal_factor
+                        (falls back to momentum_rate when no Y-1 data)
+
+    Single activities scan covering 18 months — no joins, stays fast.
+    """
+    first = date(year, month, 1)
+
+    sql = f"""
+    WITH hist AS (
       SELECT
         college_id,
-        FORMAT_DATE('%Y-%m', DATE(created))                              AS ym,
-        COUNTIF(EXTRACT(DAY FROM DATE(created)) <= {through_day})        AS mtd_count,
-        COUNT(*)                                                          AS total_month
+        DATE_TRUNC(DATE(created), MONTH)                          AS mo,
+        COUNTIF(EXTRACT(DAY FROM DATE(created)) <= {through_day}) AS mtd_count,
+        COUNT(*)                                                   AS total_month
       FROM production.activities
       WHERE kind = 'addDegreeStudent'
-        AND DATE(created) >= DATE_SUB(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 6 MONTH)
-        AND DATE(created) <  DATE_TRUNC(CURRENT_DATE(), MONTH)
-      GROUP BY college_id, ym
+        AND DATE(created) >= DATE_SUB('{first}', INTERVAL 18 MONTH)
+        AND DATE(created) <  '{first}'
+      GROUP BY 1, 2
+    ),
+    rates AS (
+      SELECT college_id, mo, SAFE_DIVIDE(mtd_count, total_month) AS rate
+      FROM hist
+      WHERE total_month > 0
+    ),
+    -- Last 4 complete months momentum
+    momentum AS (
+      SELECT college_id, AVG(rate) AS momentum_rate
+      FROM (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY college_id ORDER BY mo DESC) AS rn
+        FROM rates
+      ) WHERE rn <= 4
+      GROUP BY college_id
+    ),
+    -- Y-1 same month completion rate
+    y1_same AS (
+      SELECT college_id, rate AS y1_rate
+      FROM rates
+      WHERE mo = DATE_SUB('{first}', INTERVAL 12 MONTH)
+    ),
+    -- Y-1 preceding 4 months avg (months -16 to -13 relative to selected month)
+    y1_prev AS (
+      SELECT college_id, AVG(rate) AS y1_prev_rate
+      FROM rates
+      WHERE mo >= DATE_SUB('{first}', INTERVAL 16 MONTH)
+        AND mo <  DATE_SUB('{first}', INTERVAL 12 MONTH)
+      GROUP BY college_id
     )
     SELECT
-      college_id,
-      AVG(SAFE_DIVIDE(mtd_count, total_month)) AS completion_rate
-    FROM past_months
-    WHERE total_month > 0
-    GROUP BY college_id
+      m.college_id,
+      COALESCE(
+        SAFE_MULTIPLY(m.momentum_rate, SAFE_DIVIDE(ys.y1_rate, yp.y1_prev_rate)),
+        m.momentum_rate
+      ) AS completion_rate
+    FROM momentum m
+    LEFT JOIN y1_same ys ON ys.college_id = m.college_id
+    LEFT JOIN y1_prev yp ON yp.college_id = m.college_id
     """
     return run_query(sql).set_index("college_id")
 
@@ -875,13 +936,14 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
         "arch30d":     (_revsh_archived_30d,     (year, month)),
         "revsh_rev":   (_revsh_exp_revenue,      (year, month)),
         "pricing":     (get_pricing_config,      ()),
-        "completion":  (_completion_rates,       (today_day,)),
-        # NOTE: _rpl_admissions (degree_student_services) excluded — 80-120s BigQuery scan.
-        # Total: 12 parallel queries (was 17)
+        "completion":  (_completion_rates_seasonal, (year, month, today_day)),
+        "rpl_adm":     (_rpl_admissions,            (year, month)),
+        "st_wlh":      (_st_wlh_by_college,         (year, month)),
+        # Total: 14 parallel queries
     }
 
     results = {}
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=14) as pool:
         futures = {pool.submit(fn, *args): key for key, (fn, args) in tasks.items()}
         for future in as_completed(futures):
             key = futures[future]
@@ -891,7 +953,7 @@ def load_all_colleges(year: int, month: int) -> pd.DataFrame:
     df = colleges.copy()
 
     # ── Join count/activity data first, then fillna(0) for numeric counts ──
-    for key in ["activity", "active_base", "st_new", "st_conv_pba", "rpl", "oxford", "arch30d"]:
+    for key in ["activity", "active_base", "st_new", "st_conv_pba", "rpl", "oxford", "arch30d", "rpl_adm", "st_wlh"]:
         df = df.join(results[key], how="left")
 
     df = df.fillna(0)

@@ -1540,12 +1540,23 @@ def show_revenue_overview():
         "DRAFT": ("background:#fef9c3;color:#854d0e;border:1px solid #fde047",  "✎ Draft"),
     }
     def _status_badge(status: str) -> str:
+        if not status:
+            return ""
         style, label = _STATUS_STYLE.get(
             str(status).upper(),
-            ("background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db", status or "—")
+            ("background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db", str(status))
         )
-        return (f'<span style="{style};border-radius:6px;padding:2px 7px;'
-                f'font-size:10px;font-weight:700;white-space:nowrap">{label}</span>')
+        return (f'<span style="{style};border-radius:6px;padding:1px 6px;'
+                f'font-size:9px;font-weight:700;white-space:nowrap">{label}</span>')
+
+    def _cell(amount: float | None, status: str | None) -> str:
+        """Amount on line 1, small status badge on line 2. Shows — if no amount."""
+        if amount is None or amount == 0:
+            return PENDING
+        badge = _status_badge(status)
+        badge_html = (f"<br><span style='font-size:9px;font-weight:400'>{badge}</span>"
+                      if badge else "")
+        return f"{fmt_usd(amount)}{badge_html}"
 
     # ── Header ─────────────────────────────────────────────────────────────────
     if _MARK_DARK_PATH.exists():
@@ -1615,33 +1626,39 @@ def show_revenue_overview():
             unsafe_allow_html=True,
         )
 
-        COLS = ["College", "Invoice", "Status",
+        # Status for each revenue head (quarterly covers SAAS+Seat; monthly covers Growth+Add)
+        # wide_cols so the two-line amount+badge fits without truncation
+        COLS = ["College", "Invoice",
                 "SAAS Fee ($)", fee_col_label,
                 "Growth ($)", "Add. Items ($)",
                 "Monthly Inv. ($)", "Total CV ($)"]
+        WIDE = {"SAAS Fee ($)", fee_col_label, "Growth ($)",
+                "Add. Items ($)", "Monthly Inv. ($)", "Total CV ($)"}
 
         rows = []
         tot  = dict(saas=0.0, fee=0.0, growth=0.0, add=0.0, inv=0.0, cv=0.0)
 
         for _, r in df_sub.sort_values("name").iterrows():
-            has_inv = pd.notna(r.get("invoice_name"))
-            n_saas  = _fee(r.get("saas_fee"))    if has_inv else None
-            n_fee   = _fee(r.get("seat_fee"))    if has_inv else None
-            n_gr    = _fee(r.get("growth"))      if has_inv else None
-            n_add   = _fee(r.get("additional_items")) if has_inv else None
-            n_inv   = _fee(r.get("monthly_invoice_total")) if has_inv else None
-            n_cv    = _fee(r.get("total_cv"))    if has_inv else None
+            has_inv   = pd.notna(r.get("invoice_name"))
+            q_status  = r.get("quarterly_status")  if has_inv else None
+            m_status  = r.get("invoice_status")    if has_inv else None
+            n_saas    = _fee(r.get("saas_fee"))              if has_inv else None
+            n_fee     = _fee(r.get("seat_fee"))              if has_inv else None
+            n_gr      = _fee(r.get("growth"))                if has_inv else None
+            n_add     = _fee(r.get("additional_items"))      if has_inv else None
+            n_inv     = _fee(r.get("monthly_invoice_total")) if has_inv else None
+            n_cv      = _fee(r.get("total_cv"))              if has_inv else None
 
             row = {
-                "College":         r["name"],
-                "Invoice":         r.get("invoice_name") or PENDING,
-                "Status":          _status_badge(r.get("invoice_status")) if has_inv else PENDING,
-                "SAAS Fee ($)":    disp(n_saas)  if has_inv else PENDING,
-                fee_col_label:     disp(n_fee)   if has_inv else PENDING,
-                "Growth ($)":      disp(n_gr)    if has_inv else PENDING,
-                "Add. Items ($)":  disp(n_add)   if has_inv else PENDING,
-                "Monthly Inv. ($)":disp(n_inv)   if has_inv else PENDING,
-                "Total CV ($)":    disp(n_cv)    if has_inv else PENDING,
+                "College":          r["name"],
+                "Invoice":          r.get("invoice_name") or PENDING,
+                # Each revenue head: amount + its source invoice's status badge
+                "SAAS Fee ($)":     _cell(n_saas, q_status) if has_inv else PENDING,
+                fee_col_label:      _cell(n_fee,  q_status) if has_inv else PENDING,
+                "Growth ($)":       _cell(n_gr,   m_status) if has_inv else PENDING,
+                "Add. Items ($)":   _cell(n_add,  m_status) if has_inv else PENDING,
+                "Monthly Inv. ($)": _cell(n_inv,  m_status) if has_inv else PENDING,
+                "Total CV ($)":     _cell(n_cv,   None)     if has_inv else PENDING,
             }
             rows.append(row)
 
@@ -1652,11 +1669,10 @@ def show_revenue_overview():
             if n_inv:  tot["inv"]    += n_inv
             if n_cv:   tot["cv"]     += n_cv
 
-        # Totals row
+        # Totals row — no status badge on totals, just amounts
         tr = {c: "" for c in COLS}
         tr["College"]          = "TOTAL"
         tr["Invoice"]          = ""
-        tr["Status"]           = ""
         tr["SAAS Fee ($)"]     = fmt_usd(tot["saas"])   if tot["saas"]   else PENDING
         tr[fee_col_label]      = fmt_usd(tot["fee"])    if tot["fee"]    else PENDING
         tr["Growth ($)"]       = fmt_usd(tot["growth"]) if tot["growth"] else PENDING
@@ -1665,7 +1681,10 @@ def show_revenue_overview():
         tr["Total CV ($)"]     = fmt_usd(tot["cv"])     if tot["cv"]     else PENDING
         rows.append(tr)
 
-        st.markdown(html_table(rows, COLS, total_row=True), unsafe_allow_html=True)
+        st.markdown(
+            html_table(rows, COLS, wide_cols=WIDE, total_row=True),
+            unsafe_allow_html=True,
+        )
 
         if tot["cv"] > 0:
             st.markdown(

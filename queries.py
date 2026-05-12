@@ -672,6 +672,7 @@ def _april_invoices() -> pd.DataFrame:
     quarterly AS (
       SELECT
         i.college_id,
+        MAX(i.status)                                             AS quarterly_status,
         SUM(CASE WHEN LOWER(cp.name) LIKE '%historical%'
                  THEN cp.price * cp.quantity ELSE 0 END) / 3.0   AS saas_fee,
         SUM(CASE WHEN LOWER(cp.name) LIKE '%prepaid seat%'
@@ -722,9 +723,12 @@ def _april_invoices() -> pd.DataFrame:
       mp.college_id,
       mp.invoice_name,
       mp.invoice_status,
+      -- quarterly invoice status (covers SAAS Fee + Seat Fee columns)
+      q.quarterly_status,
       ROUND(COALESCE(q.saas_fee,           0), 2)                 AS saas_fee,
       ROUND(COALESCE(q.seat_prepaid_monthly,0)
             + COALESCE(mp.seat_overage,    0), 2)                 AS seat_fee,
+      -- monthly invoice status (covers Growth + Add. Items + Monthly Inv. columns)
       ROUND(COALESCE(mp.growth,            0), 2)                 AS growth,
       ROUND(COALESCE(ad.additional_items,  0), 2)                 AS additional_items,
       ROUND(

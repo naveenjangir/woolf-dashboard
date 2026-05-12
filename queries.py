@@ -6,6 +6,7 @@ Read-only SELECTs against Woolf BigQuery (database_id=3).
 
 from datetime import date
 import calendar
+import os
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from metabase import run_query
@@ -15,11 +16,16 @@ from pathlib import Path
 
 # ── Disk query cache ──────────────────────────────────────────────────────────
 # Pickle files keyed by (function, args). Survive page reloads and cross-user
-# requests within the running Railway container. Reset only on redeploy.
-# Each cached function declares its own max_age_hours.
+# requests within the running Railway container.
+#
+# Set WOOLF_CACHE_DIR env var to point at a Railway Persistent Volume mount
+# (e.g. /data/woolf_cache) so cache files survive redeploys and are shared
+# between the web service and the precompute cron service.
+# Falls back to .query_cache/ inside the repo for local development.
 
-_CACHE_DIR = Path(__file__).parent / ".query_cache"
-_CACHE_DIR.mkdir(exist_ok=True)
+_CACHE_DIR = Path(os.environ.get("WOOLF_CACHE_DIR",
+                                  str(Path(__file__).parent / ".query_cache")))
+_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _cache_get(key: str, max_age_hours: float):

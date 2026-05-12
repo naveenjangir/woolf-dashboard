@@ -85,6 +85,47 @@ SQUAD_MAP: dict[str, list[str]] = {
         "WeStride Institute of Technology",
     ],
 }
+# ── Short display names (full DB name → short label used across all pages) ────
+SHORT_NAMES: dict[str, str] = {
+    "Udacity Institute of AI & Technology":                         "Udacity",
+    "AlmaBetter Innovarsity":                                       "AlmaBetter",
+    "Pickering Global Campus":                                      "Pickering",
+    "Exeed College":                                                "Exeed",
+    "UGNXT":                                                        "UGNXT",
+    "Chegg Skills Institute of Applied Learning":                   "Chegg Skills",
+    "Learnbay":                                                     "Learnbay",
+    "GMC School of Technology":                                     "GMC",
+    "Global School of Entrepreneurship":                            "GSE",
+    "Inner Institute":                                              "Inner Institute",
+    "Kingsford College of Business and Technology":                 "Kingsford",
+    "MSM Grad":                                                     "MSM Grad",
+    "Scaler Neovarsity":                                            "Scaler",
+    "Directors' Institute - World Council Of Directors":            "Directors' Institute",
+    "Africa Digital Media Institute":                               "ADMI",
+    "GoIT Neoversity":                                              "GoIT",
+    "Oneday":                                                       "Oneday",
+    "Mentogram":                                                    "Mentogram",
+    "Global Center for Advanced Studies":                           "GCAS",
+    "Data Science Institute":                                       "DSI",
+    "Breathe For Change":                                           "B4C",
+    "WeStride Institute of Technology":                             "WeStride",
+    "Studienzentrum Hohe Warte":                                    "SHW",
+    "NxtWave School of Technology":                                 "NxtWave",
+    "The Global Leaders Institute":                                 "GLI",
+    "ALTIS Higher Education":                                       "ALTIS",
+    "Digital Scholar":                                              "Digital Scholar",
+    "Deep Science Ventures":                                        "DSV",
+    "Clarke College":                                               "Clarke College",
+    "Retro Biosciences":                                            "Retro Bioscience",
+    "Authstone College":                                            "Authstone",
+    "MATRIX - Maven Academy for Technology, Research, Innovation & eXcellence": "MATRIX",
+}
+
+def sn(name: str) -> str:
+    """Return the short display name for a college, falling back to full name."""
+    return SHORT_NAMES.get(name, name)
+
+
 SQUAD_ICONS: dict[str, str] = {
     "India Squad":   "🇮🇳",
     "US Squad":      "🇺🇸",
@@ -722,24 +763,29 @@ def _squad_sorted_colleges(squad_name: str) -> list[str]:
 _cur_page = st.session_state["_page"]
 
 # Single flat nav list: Enrolment Overview → Revenue Overview → Overview → 4 squads → all colleges A-Z
-_nav_squad_labels = [f"{SQUAD_ICONS[sq]} {sq}" for sq in SQUAD_MAP]
-_nav_college_names = sorted(df_all["name"].tolist())
+_nav_squad_labels  = [f"{SQUAD_ICONS[sq]} {sq}" for sq in SQUAD_MAP]
+_nav_college_names = sorted(df_all["name"].tolist())          # full names (used as page IDs)
+_nav_college_labels= [sn(n) for n in _nav_college_names]     # short display labels
+
 _nav_options = (
     ["📈 Enrolment Overview", "💰 Revenue Overview", "📊 Overview"]
     + _nav_squad_labels
-    + _nav_college_names
+    + _nav_college_labels   # show short names in sidebar
 )
 
-# Map every label → page id  (colleges map to themselves)
+# Map display label → page id  (colleges: short label → full name as page ID)
 _nav_id_map = (
     {"📈 Enrolment Overview": "enrolment_overview",
      "💰 Revenue Overview":   "revenue_overview",
      "📊 Overview":           "overview"}
     | {f"{SQUAD_ICONS[sq]} {sq}": _SQUAD_PAGE_IDS[sq] for sq in SQUAD_MAP}
-    | {name: name for name in _nav_college_names}
+    | {sn(name): name for name in _nav_college_names}   # short label → full page ID
 )
-# Reverse: page id → label
-_nav_label_map = {pid: lbl for lbl, pid in _nav_id_map.items()}
+# Reverse: page id → display label
+_nav_label_map = (
+    {pid: lbl for lbl, pid in _nav_id_map.items()}
+    | {name: sn(name) for name in _nav_college_names}   # full name → short label
+)
 
 _nav_idx = _nav_options.index(_nav_label_map[_cur_page]) if _cur_page in _nav_label_map else 0
 
@@ -965,7 +1011,7 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
             var_str   = calc_variance(cur_enrol, proj, r.get("completion_rate"))
 
             row = {
-                "College":        r["name"],
+                "College":        sn(r["name"]),
                 active_lbl: safe_int(r["active_base"]),
                 proj_lbl:         proj if proj is not None else PENDING,
                 cur_lbl:          cur_enrol,
@@ -1193,7 +1239,7 @@ def show_overview(college_filter: set | None = None, squad_name: str | None = No
             var_str   = calc_variance(cur_enrol, proj, r.get("completion_rate"))
 
             row = {
-                "College":    r["name"],
+                "College":    sn(r["name"]),
                 proj_lbl:     proj if proj is not None else PENDING,
                 cur_lbl:      cur_enrol,
                 m1_lbl:       int(r["new_enrol_m1"]),
@@ -1660,7 +1706,7 @@ def show_revenue_overview():
             n_cv      = _fee(r.get("total_cv"))              if has_inv else None
 
             row = {
-                "College":          r["name"],
+                "College":          sn(r["name"]),
                 # Each revenue head: amount + its source invoice's status badge
                 "SAAS Fee ($)":     _cell(n_saas, q_status) if has_inv else PENDING,
                 fee_col_label:      _cell(n_fee,  q_status) if has_inv else PENDING,
@@ -1894,7 +1940,7 @@ def show_enrolment_overview():
             var_str   = calc_variance(cur_enrol, proj, r.get("completion_rate"))
 
             row = {
-                "College":          r["name"],
+                "College":          sn(r["name"]),
                 active_lbl:         safe_int(r["active_base"]),
                 proj_lbl:           proj if proj is not None else PENDING,
                 cur_lbl:            cur_enrol,
@@ -2034,7 +2080,7 @@ def show_enrolment_overview():
             var_str   = calc_variance(cur_enrol, proj, r.get("completion_rate"))
 
             row = {
-                "College":          r["name"],
+                "College":          sn(r["name"]),
                 proj_lbl:           proj if proj is not None else PENDING,
                 cur_lbl:            cur_enrol,
                 m1_lbl:             int(r["new_enrol_m1"]),

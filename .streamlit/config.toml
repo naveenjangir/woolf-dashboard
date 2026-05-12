@@ -8,3 +8,8 @@ font                  = "serif"
 
 [server]
 headless              = true
+enableWebsocketCompression = false
+maxMessageSize        = 200
+
+[browser]
+gatherUsageStats      = false

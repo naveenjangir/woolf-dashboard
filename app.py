@@ -1765,7 +1765,6 @@ def show_enrolment_overview():
             f'</div>',
             unsafe_allow_html=True,
         )
-    st.caption(f"{m1_lbl}  ·  {y1_lbl}  ·  Cached 1 hr")
 
     df = df_all[df_all["revenue_model"].isin(model_filter)]
 

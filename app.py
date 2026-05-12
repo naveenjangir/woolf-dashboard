@@ -1751,16 +1751,13 @@ def show_enrolment_overview():
     if _MARK_DARK_PATH.exists():
         mark_b64 = _img_b64(_MARK_DARK_PATH)
         st.markdown(
-            f'<div style="display:flex;align-items:center;gap:14px;margin-bottom:2px">'
-            f'<div style="background:{_ENROL_COLOUR};border-radius:8px;width:44px;height:44px;'
-            f'display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">'
-            f'<img src="{mark_b64}" style="height:26px;width:auto"/>'
-            f'</div>'
+            f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:2px">'
+            f'<img src="{mark_b64}" style="height:36px;width:36px;border-radius:6px;'
+            f'background:#e5e7eb;padding:5px;flex-shrink:0"/>'
             f'<div>'
-            f'<div style="font-size:22px;font-weight:700;color:#111827;line-height:1.15">'
+            f'<div style="font-size:22px;font-weight:700;color:#111827;line-height:1.2">'
             f'📈 Enrolment Overview</div>'
-            f'<div style="font-size:13px;color:#6b7280;letter-spacing:0.2px;margin-top:1px">'
-            f'{period}</div>'
+            f'<div style="font-size:13px;color:#6b7280;margin-top:1px">{period}</div>'
             f'</div>'
             f'</div>',
             unsafe_allow_html=True,
@@ -1789,54 +1786,45 @@ def show_enrolment_overview():
     _adm_rpl    = _extras.get("adm_rpl",      0)
     _enrol_total= _extras.get("enrol_total", _funnel_enrol)  # fallback to df total if query fails
 
-    # ST age subtitle for the ST→Degree tile
-    _age_sub = (f'<span style="color:#7c3aed">0–3m: {_age_0_3m}</span>'
-                f'<span style="color:#9ca3af"> · </span>'
-                f'<span style="color:#7c3aed">3–6m: {_age_3_6m}</span>'
-                f'<span style="color:#9ca3af"> · </span>'
-                f'<span style="color:#7c3aed">6–12m: {_age_6_12m}</span>'
-                f'<span style="color:#9ca3af"> · </span>'
-                f'<span style="color:#7c3aed">12+m: {_age_12pm}</span>')
-    # Admission type subtitle for the Enrolled tile
-    _adm_sub = (f'<span style="color:#1d4ed8">Std: {_adm_std}</span>'
-                f'<span style="color:#9ca3af"> · </span>'
-                f'<span style="color:#059669">PBA: {_adm_pba}</span>'
-                f'<span style="color:#9ca3af"> · </span>'
-                f'<span style="color:#d97706">RPL: {_adm_rpl}</span>')
+    # Shared styles for all tiles
+    _lbl  = 'font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#9ca3af'
+    _num  = 'font-size:24px;font-weight:700;color:#111827;line-height:1.1;margin:4px 0 2px'
+    _sub  = 'font-size:10px;color:#6b7280;margin-top:2px'
+
+    # Sub-text lines — all grey, no mixed colours
+    _wlh_sub  = f'⚡ &gt;25 WLH: {_wlh:,}'
+    _age_sub  = (f'0–3m: {_age_0_3m} · 3–6m: {_age_3_6m} · '
+                 f'6–12m: {_age_6_12m} · 12+m: {_age_12pm}')
+    _adm_sub  = f'Std: {_adm_std} · PBA: {_adm_pba} · RPL: {_adm_rpl}'
 
     st.markdown(
         f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
-        f'padding:12px 20px;margin:10px 0 16px;display:flex;align-items:center;'
-        f'gap:0;flex-wrap:wrap">'
-        # ── Tile 1: ST Students till last month + WLH sub-metric ──
-        f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
-        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
-        f'letter-spacing:0.5px;color:#6b7280">ST Students (till last month)</div>'
-        f'<div style="font-size:22px;font-weight:700;color:#111827">{_funnel_st_till:,}</div>'
-        f'<div style="font-size:10px;color:#0f766e;font-weight:600;margin-top:2px">'
-        f'⚡ &gt;25 WLH: {_wlh:,}</div>'
+        f'padding:14px 24px;margin:12px 0 16px;display:flex;align-items:center;gap:0;flex-wrap:wrap">'
+        # ── Tile 1: ST Students till last month ──
+        f'<div style="text-align:center;padding:4px 24px;border-right:1px solid #e2e8f0">'
+        f'<div style="{_lbl}">ST Students (till last month)</div>'
+        f'<div style="{_num}">{_funnel_st_till:,}</div>'
+        f'<div style="{_sub}">{_wlh_sub}</div>'
         f'</div>'
         # ── Tile 2: New ST ──
-        f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
-        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
-        f'letter-spacing:0.5px;color:#6b7280">New ST ({period})</div>'
-        f'<div style="font-size:22px;font-weight:700;color:#111827">{_funnel_st_new:,}</div>'
+        f'<div style="text-align:center;padding:4px 24px;border-right:1px solid #e2e8f0">'
+        f'<div style="{_lbl}">New ST ({period})</div>'
+        f'<div style="{_num}">{_funnel_st_new:,}</div>'
+        f'<div style="{_sub}">&nbsp;</div>'
         f'</div>'
-        f'<div style="padding:4px 12px;color:#9ca3af;font-size:18px">→</div>'
+        f'<div style="padding:0 10px;color:#d1d5db;font-size:20px">→</div>'
         # ── Tile 3: ST→Degree + age bands ──
-        f'<div style="text-align:center;padding:4px 20px;border-right:1px solid #e2e8f0">'
-        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
-        f'letter-spacing:0.5px;color:#7c3aed">ST → Degree ({period})</div>'
-        f'<div style="font-size:22px;font-weight:700;color:#7c3aed">{_conv_total:,}</div>'
-        f'<div style="font-size:10px;margin-top:2px">{_age_sub}</div>'
+        f'<div style="text-align:center;padding:4px 24px;border-right:1px solid #e2e8f0">'
+        f'<div style="{_lbl}">ST → Degree ({period})</div>'
+        f'<div style="{_num}">{_conv_total:,}</div>'
+        f'<div style="{_sub}">{_age_sub}</div>'
         f'</div>'
-        f'<div style="padding:4px 12px;color:#9ca3af;font-size:18px">→</div>'
+        f'<div style="padding:0 10px;color:#d1d5db;font-size:20px">→</div>'
         # ── Tile 4: Enrolled + admission type ──
-        f'<div style="text-align:center;padding:4px 20px">'
-        f'<div style="font-size:11px;font-weight:700;text-transform:uppercase;'
-        f'letter-spacing:0.5px;color:#1d4ed8">Enrolled ({period})</div>'
-        f'<div style="font-size:22px;font-weight:700;color:#1d4ed8">{_enrol_total:,}</div>'
-        f'<div style="font-size:10px;margin-top:2px">{_adm_sub}</div>'
+        f'<div style="text-align:center;padding:4px 24px">'
+        f'<div style="{_lbl}">Enrolled ({period})</div>'
+        f'<div style="{_num}">{_enrol_total:,}</div>'
+        f'<div style="{_sub}">{_adm_sub}</div>'
         f'</div>'
         f'</div>',
         unsafe_allow_html=True,

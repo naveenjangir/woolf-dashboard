@@ -1752,21 +1752,20 @@ def show_enrolment_overview():
         mark_b64 = _img_b64(_MARK_DARK_PATH)
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:14px;margin-bottom:2px">'
-            f'<div style="background:{_ENROL_COLOUR};border-radius:10px;width:44px;height:44px;'
-            f'display:inline-flex;align-items:center;justify-content:center;'
-            f'flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.18)">'
+            f'<div style="background:{_ENROL_COLOUR};border-radius:8px;width:44px;height:44px;'
+            f'display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">'
             f'<img src="{mark_b64}" style="height:26px;width:auto"/>'
             f'</div>'
             f'<div>'
             f'<div style="font-size:22px;font-weight:700;color:#111827;line-height:1.15">'
             f'📈 Enrolment Overview</div>'
-            f'<div style="font-size:11px;color:#6b7280;letter-spacing:0.3px">'
-            f'Woolf · {period}</div>'
+            f'<div style="font-size:13px;color:#6b7280;letter-spacing:0.2px;margin-top:1px">'
+            f'{period}</div>'
             f'</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
-    st.caption(f"M-1: {m1_lbl}  ·  Y-1: {y1_lbl}  ·  Cached 1 hr")
+    st.caption(f"{m1_lbl}  ·  {y1_lbl}  ·  Cached 1 hr")
 
     df = df_all[df_all["revenue_model"].isin(model_filter)]
 

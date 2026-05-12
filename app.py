@@ -1528,12 +1528,24 @@ def show_college_detail(college_name: str):
 def show_revenue_overview():
     """
     Revenue Overview — testing page, hard-coded to April 2026.
-    Shows two tables (Seat-Based / Revenue-Share) with 6 revenue head columns:
-      SAAS Fee | Seat Fee (or Rev Share) | Svc Invoice Total |
-      Growth (ST/RPL/PBA) | Oxford SBS | Total CV
+    Revenue figures sourced directly from the invoices system.
     Month filter in the sidebar does NOT apply here.
     """
     _REV_COLOUR = "#7c3aed"
+
+    # ── Status badge HTML helper ───────────────────────────────────────────────
+    _STATUS_STYLE = {
+        "PAID":  ("background:#dcfce7;color:#166534;border:1px solid #86efac",  "✓ Paid"),
+        "OPEN":  ("background:#dbeafe;color:#1e40af;border:1px solid #93c5fd",  "● Open"),
+        "DRAFT": ("background:#fef9c3;color:#854d0e;border:1px solid #fde047",  "✎ Draft"),
+    }
+    def _status_badge(status: str) -> str:
+        style, label = _STATUS_STYLE.get(
+            str(status).upper(),
+            ("background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db", status or "—")
+        )
+        return (f'<span style="{style};border-radius:6px;padding:2px 7px;'
+                f'font-size:10px;font-weight:700;white-space:nowrap">{label}</span>')
 
     # ── Header ─────────────────────────────────────────────────────────────────
     if _MARK_DARK_PATH.exists():
@@ -1563,172 +1575,135 @@ def show_revenue_overview():
         '<div style="font-size:22px;flex-shrink:0">⚠️</div>'
         '<div>'
         '<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px">'
-        'Testing Page — Work in Progress</div>'
-        '<div style="font-size:12px;color:#78350f;line-height:1.55">'
-        'Data is <strong>hard-coded to April 2026</strong>. '
-        'The month filter in the sidebar <strong>does not apply</strong> to this page.<br>'
-        'Revenue figures are <strong>estimates</strong> — Seat Fee and Rev Share use '
-        'the same calculated methodology as the Overview page. '
-        '"Svc Invoice Total" shows the <em>actual</em> billed MONTHLY invoice amount '
-        'from the database (for validation). '
-        'SAAS Fee = Q2 2026 quarterly invoice ÷ 3 (monthly share).</div>'
+        'Testing Page — Work in Progress · April 2026 only</div>'
+        '<div style="font-size:12px;color:#78350f;line-height:1.6">'
+        'All revenue figures are pulled <strong>directly from the invoicing system</strong> '
+        '— no estimates. The month filter does not apply to this page.<br>'
+        '<strong>Draft</strong> invoices = system-generated, not yet reconciled (typically first week of month). '
+        '<strong>Open</strong> = reconciled, awaiting payment. '
+        '<strong>Paid</strong> = closed. '
+        'SAAS Fee shows $0 where Q2 quarterly SAAS line not yet created. '
+        'Columns show — where no invoice exists for a college.</div>'
         '</div>'
         '</div>',
         unsafe_allow_html=True,
     )
 
-    # ── Load data (always April 2026) ─────────────────────────────────────────
-    with st.spinner("📡 Loading April 2026 data…"):
-        df_april = get_data(2026, 4)
-        df_inv   = get_april_invoices()   # saas_fee, monthly_invoice_total
+    # ── Load data ─────────────────────────────────────────────────────────────
+    with st.spinner("📡 Loading April 2026 invoice data…"):
+        df_colleges = get_data(2026, 4)   # for college name + revenue_model lookup
+        df_inv      = get_april_invoices() # invoice-sourced breakdown
 
-    # Merge invoice data (left join on college_id)
-    if not df_inv.empty:
-        df_april = df_april.merge(
-            df_inv.reset_index().rename(columns={"index": "college_id"}),
-            on="college_id",
-            how="left",
-        )
-    else:
-        df_april["saas_fee"]             = None
-        df_april["monthly_invoice_total"] = None
+    # Merge on college_id so we know each college's revenue_model and name
+    df_inv_r = df_inv.reset_index()   # college_id becomes a column
+    df = df_colleges[["college_id","name","revenue_model"]].merge(
+        df_inv_r, on="college_id", how="left"
+    )
 
-    def _rev_table(df_sub: str, section_title: str, section_css: str,
-                   fee_col_label: str, fee_col_fn):
-        """
-        Render one revenue section (Seat-Based or Revenue-Share).
-
-        fee_col_label : display name for column 3 ('Seat Fee ($)' or 'Rev Share ($)')
-        fee_col_fn    : callable(row) → float|None for that column
-        """
+    def _rev_table(df_sub, section_title, section_css, fee_col_label):
         if df_sub.empty:
             return
 
+        count       = len(df_sub)
+        has_invoice = df_sub["invoice_name"].notna().sum()
         st.markdown(
             f'<div class="sec {section_css}">'
             f'<h2>{section_title}</h2>'
-            f'<span class="sub">{len(df_sub)} colleges</span>'
+            f'<span class="sub">{count} colleges · '
+            f'{has_invoice} with April invoices</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-        cols_keys = [
-            "College",
-            "SAAS Fee ($)",
-            fee_col_label,
-            "Svc Invoice Total ($)",
-            "Growth (ST/RPL/PBA) ($)",
-            "Oxford SBS ($)",
-            "Total CV ($)",
-        ]
+        COLS = ["College", "Invoice", "Status",
+                "SAAS Fee ($)", fee_col_label,
+                "Growth ($)", "Add. Items ($)",
+                "Monthly Inv. ($)", "Total CV ($)"]
 
-        rows  = []
-        tot   = dict(saas=0.0, fee=0.0, inv=0.0, growth=0.0, sbs=0.0, total=0.0)
-        inv_available = not df_inv.empty
+        rows = []
+        tot  = dict(saas=0.0, fee=0.0, growth=0.0, add=0.0, inv=0.0, cv=0.0)
 
         for _, r in df_sub.sort_values("name").iterrows():
-            # ── Revenue components ────────────────────────────────────────────
-            n_saas  = _fee(r.get("saas_fee"))
-            n_fee   = fee_col_fn(r)
-            n_inv   = _fee(r.get("monthly_invoice_total"))
-            n_st    = _st_rev_num(r.get("st_converted_this_month"), r.get("airlock_fee"))
-            n_rpl   = _rpl_pba_num(r.get("rpl_low"), r.get("rpl_high"),
-                                    r.get("pba_count"), 0, r.get("airlock_fee"))
-            n_growth = (
-                (n_st  or 0) + (n_rpl or 0)
-                if (n_st is not None or n_rpl is not None) else None
-            )
-            n_sbs   = _sbs_rev_num(r.get("oxford_sbs"), r["name"])
-            n_total = sum(
-                x for x in [n_saas, n_fee, n_growth, n_sbs]
-                if x is not None
-            ) or None
+            has_inv = pd.notna(r.get("invoice_name"))
+            n_saas  = _fee(r.get("saas_fee"))    if has_inv else None
+            n_fee   = _fee(r.get("seat_fee"))    if has_inv else None
+            n_gr    = _fee(r.get("growth"))      if has_inv else None
+            n_add   = _fee(r.get("additional_items")) if has_inv else None
+            n_inv   = _fee(r.get("monthly_invoice_total")) if has_inv else None
+            n_cv    = _fee(r.get("total_cv"))    if has_inv else None
 
             row = {
-                "College":                  r["name"],
-                "SAAS Fee ($)":             disp(n_saas),
-                fee_col_label:              disp(n_fee),
-                "Svc Invoice Total ($)":    disp(n_inv) if inv_available else PENDING,
-                "Growth (ST/RPL/PBA) ($)":  disp(n_growth),
-                "Oxford SBS ($)":           disp(n_sbs),
-                "Total CV ($)":             disp(n_total) if n_total else PENDING,
+                "College":         r["name"],
+                "Invoice":         r.get("invoice_name") or PENDING,
+                "Status":          _status_badge(r.get("invoice_status")) if has_inv else PENDING,
+                "SAAS Fee ($)":    disp(n_saas)  if has_inv else PENDING,
+                fee_col_label:     disp(n_fee)   if has_inv else PENDING,
+                "Growth ($)":      disp(n_gr)    if has_inv else PENDING,
+                "Add. Items ($)":  disp(n_add)   if has_inv else PENDING,
+                "Monthly Inv. ($)":disp(n_inv)   if has_inv else PENDING,
+                "Total CV ($)":    disp(n_cv)    if has_inv else PENDING,
             }
             rows.append(row)
 
-            if n_saas:   tot["saas"]   += n_saas
-            if n_fee:    tot["fee"]    += n_fee
-            if n_inv:    tot["inv"]    += n_inv
-            if n_growth: tot["growth"] += n_growth
-            if n_sbs:    tot["sbs"]    += n_sbs
-            if n_total:  tot["total"]  += n_total
+            if n_saas: tot["saas"]   += n_saas
+            if n_fee:  tot["fee"]    += n_fee
+            if n_gr:   tot["growth"] += n_gr
+            if n_add:  tot["add"]    += n_add
+            if n_inv:  tot["inv"]    += n_inv
+            if n_cv:   tot["cv"]     += n_cv
 
-        # ── Totals row ────────────────────────────────────────────────────────
-        tot_row = {
-            "College":                  "TOTAL",
-            "SAAS Fee ($)":             fmt_usd(tot["saas"])   if tot["saas"]   else PENDING,
-            fee_col_label:              fmt_usd(tot["fee"])    if tot["fee"]    else PENDING,
-            "Svc Invoice Total ($)":    fmt_usd(tot["inv"])    if tot["inv"]    else PENDING,
-            "Growth (ST/RPL/PBA) ($)":  fmt_usd(tot["growth"]) if tot["growth"] else PENDING,
-            "Oxford SBS ($)":           fmt_usd(tot["sbs"])    if tot["sbs"]    else PENDING,
-            "Total CV ($)":             fmt_usd(tot["total"])  if tot["total"]  else PENDING,
-        }
-        rows.append(tot_row)
+        # Totals row
+        tr = {c: "" for c in COLS}
+        tr["College"]          = "TOTAL"
+        tr["Invoice"]          = ""
+        tr["Status"]           = ""
+        tr["SAAS Fee ($)"]     = fmt_usd(tot["saas"])   if tot["saas"]   else PENDING
+        tr[fee_col_label]      = fmt_usd(tot["fee"])    if tot["fee"]    else PENDING
+        tr["Growth ($)"]       = fmt_usd(tot["growth"]) if tot["growth"] else PENDING
+        tr["Add. Items ($)"]   = fmt_usd(tot["add"])    if tot["add"]    else PENDING
+        tr["Monthly Inv. ($)"] = fmt_usd(tot["inv"])    if tot["inv"]    else PENDING
+        tr["Total CV ($)"]     = fmt_usd(tot["cv"])     if tot["cv"]     else PENDING
+        rows.append(tr)
 
-        st.markdown(
-            html_table(rows, cols_keys, total_row=True),
-            unsafe_allow_html=True,
-        )
+        st.markdown(html_table(rows, COLS, total_row=True), unsafe_allow_html=True)
 
-        # ── Section summary ───────────────────────────────────────────────────
-        if tot["total"] > 0:
+        if tot["cv"] > 0:
             st.markdown(
                 f'<div class="wt-caption" style="margin-top:6px;font-size:12px;color:#374151">'
-                f'✅ <strong>Calculated Total CV (April 2026):</strong> '
+                f'✅ <strong>Total CV (April 2026):</strong> '
                 f'<span style="font-size:14px;font-weight:700;color:{_REV_COLOUR}">'
-                f'{fmt_usd(tot["total"])}</span>'
+                f'{fmt_usd(tot["cv"])}</span>'
                 f'&nbsp;&nbsp;<span style="color:#6b7280">'
                 f'(SAAS {fmt_usd(tot["saas"])} · '
-                f'{fee_col_label.replace(" ($)", "")} {fmt_usd(tot["fee"])} · '
+                f'{fee_col_label.replace(" ($)","")} {fmt_usd(tot["fee"])} · '
                 f'Growth {fmt_usd(tot["growth"])} · '
-                f'SBS {fmt_usd(tot["sbs"])})</span>'
+                f'Add. Items {fmt_usd(tot["add"])})</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
     # ── Seat-Based ────────────────────────────────────────────────────────────
-    seat = df_april[df_april["revenue_model"] == "SEAT_BASED"].copy()
-    _rev_table(
-        seat,
-        section_title="🪑 Seat-Based",
-        section_css="sec-seat",
-        fee_col_label="Seat Fee ($)",
-        fee_col_fn=lambda r: _seat_exp_num(r.get("seat_exp_rev")),
-    )
+    seat = df[df["revenue_model"] == "SEAT_BASED"].copy()
+    _rev_table(seat, "🪑 Seat-Based", "sec-seat", "Seat Fee ($)")
 
     # ── Revenue-Share ─────────────────────────────────────────────────────────
-    revsh = df_april[df_april["revenue_model"] == "REVENUE_SHARE"].copy()
-    _rev_table(
-        revsh,
-        section_title="📊 Revenue-Share",
-        section_css="sec-revsh",
-        fee_col_label="Rev Share ($)",
-        fee_col_fn=lambda r: _revsh_exp_num(r.get("exp_rev_usd")),
-    )
+    revsh = df[df["revenue_model"] == "REVENUE_SHARE"].copy()
+    _rev_table(revsh, "📊 Revenue-Share", "sec-revsh", "Rev Share ($)")
 
     # ── Legend ────────────────────────────────────────────────────────────────
     st.markdown(
         '<div class="wt-caption" style="margin-top:14px">'
-        '<strong>Column guide:</strong> '
-        'SAAS Fee = Q2 2026 quarterly invoice ÷ 3 (monthly share; PENDING = invoice not yet in system) · '
-        'Seat Fee = Σ(active seats × per-degree fee) as at Apr 30 · '
-        'Rev Share = Σ MAX(enrol% × tuition, min_rev_share) for April enrolments · '
-        'Svc Invoice Total = actual MONTHLY invoice amount billed in April (direct from invoices table; '
-        'PENDING = no April invoice found or column unavailable) · '
-        'Growth (ST/RPL/PBA) = (ST→Deg × airlock fee) + (RPL/PBA fees) · '
-        'Oxford SBS = SBS enrolments × college SBS rate · '
-        'Total CV = SAAS + Seat/RevShare + Growth + SBS '
-        '(Svc Invoice Total excluded from sum to avoid double-counting seat revenue) · '
-        '— = zero or no data'
+        '<strong>Column guide (all figures from invoicing system):</strong> '
+        'SAAS Fee = Q2 quarterly custom_prices "Historical…" line ÷ 3 · '
+        'Seat Fee = quarterly "Prepaid Seats" ÷ 3 + SEAT_OVERAGE charges · '
+        'Rev Share = ENROLLMENT purchases rev_share sum · '
+        'Growth = Airlock + PBA + Import + RPL + Exemption purchase charges · '
+        'Add. Items = custom_prices item_type="charge" on monthly invoice '
+        '(e.g. legacy rev-share carry-overs) · '
+        'Monthly Inv. = invoices.amount for the MONTHLY invoice · '
+        'Total CV = SAAS + Seat/RevShare + Growth + Add. Items · '
+        'Status: ✎ Draft = not yet reconciled · ● Open = reconciled, awaiting payment · '
+        '✓ Paid = closed'
         '</div>',
         unsafe_allow_html=True,
     )

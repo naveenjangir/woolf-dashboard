@@ -650,31 +650,93 @@ def get_graduation_data(college_id: str) -> dict:
 
 def _april_invoices() -> pd.DataFrame:
     """
-    April 2026 invoice summary per college from the invoices table.
+    April 2026 revenue breakdown per college, sourced directly from invoices.
 
-    Returns two columns (indexed by college_id):
-      saas_fee             – monthly share of Q2 2026 SAAS fee
-                             (QUARTERLY invoice amount ÷ 3)
-      monthly_invoice_total– total MONTHLY invoiced amount for April 2026
-                             (actual figure from invoices — useful for validation
-                              against our calculated seat/growth estimates)
+    Columns (indexed by college_id):
+      invoice_name          – invoice reference (e.g. ABI-0002)
+      invoice_status        – DRAFT / OPEN / PAID
+      saas_fee              – monthly share of Q2 SAAS (custom_prices 'Historical…' ÷ 3)
+      seat_fee              – monthly share of prepaid seats (÷ 3) + seat overage
+      growth                – Airlock + PBA + Import + RPL + Exemption (from purchases × prices)
+      additional_items      – custom_prices.item_type='charge' on monthly invoice
+      total_cv              – saas + seat + growth + additional
+      monthly_invoice_total – invoices.amount for the MONTHLY invoice (actual billed)
 
-    NOTE: college_id must exist directly on the invoices table for this query
-    to work.  If the column is missing the caller should catch the exception.
+    SAAS fee = $0 if no 'Historical…' line exists in the Q2 quarterly yet.
+    Columns are PENDING in the dashboard until the invoice is generated.
     """
     sql = """
+    WITH
+
+    -- Q2 2026 quarterly custom_prices per college (Apr–Jun)
+    quarterly AS (
+      SELECT
+        i.college_id,
+        SUM(CASE WHEN LOWER(cp.name) LIKE '%historical%'
+                 THEN cp.price * cp.quantity ELSE 0 END) / 3.0   AS saas_fee,
+        SUM(CASE WHEN LOWER(cp.name) LIKE '%prepaid seat%'
+                 THEN cp.price * cp.quantity ELSE 0 END) / 3.0   AS seat_prepaid_monthly
+      FROM production.custom_prices cp
+      JOIN production.invoices i ON i.id = cp.invoice_id
+      WHERE i.kind = 'QUARTERLY'
+        AND i.billing_started = '2026-04-01T00:00:00Z'
+      GROUP BY i.college_id
+    ),
+
+    -- April MONTHLY purchases (growth + seat overage) using actual prices
+    monthly_purchases AS (
+      SELECT
+        i.college_id,
+        i.name     AS invoice_name,
+        i.status   AS invoice_status,
+        i.amount   AS invoice_total,
+        SUM(CASE WHEN svc.kind = 'SEAT_OVERAGE'
+                 THEN COALESCE(pr.price, 0) ELSE 0 END)           AS seat_overage,
+        SUM(CASE WHEN svc.kind IN ('AIRLOCK','PBA','IMPORT','RPL','EXEMPTION')
+                 THEN COALESCE(pr.price, 0) ELSE 0 END)           AS growth
+      FROM production.purchases p
+      JOIN production.invoices i      ON i.id   = p.invoice_id
+      LEFT JOIN production.products  prod ON prod.id = p.product_id
+      LEFT JOIN production.services  svc  ON svc.id  = prod.service_id
+      LEFT JOIN production.prices    pr   ON pr.id   = p.price_id
+      WHERE i.kind = 'MONTHLY'
+        AND i.billing_started = '2026-04-01T00:00:00Z'
+        AND p.status = 'BILLABLE'
+      GROUP BY i.college_id, i.name, i.status, i.amount
+    ),
+
+    -- April MONTHLY additional items (legacy rev-share carryovers, custom adjustments)
+    additional AS (
+      SELECT
+        i.college_id,
+        SUM(cp.price * cp.quantity)                               AS additional_items
+      FROM production.custom_prices cp
+      JOIN production.invoices i ON i.id = cp.invoice_id
+      WHERE i.kind = 'MONTHLY'
+        AND i.billing_started = '2026-04-01T00:00:00Z'
+        AND cp.item_type = 'charge'
+      GROUP BY i.college_id
+    )
+
     SELECT
-      college_id,
-      ROUND(SUM(CASE WHEN kind = 'QUARTERLY' THEN amount / 3.0 ELSE 0 END), 0)
-            AS saas_fee,
-      ROUND(SUM(CASE WHEN kind = 'MONTHLY'   THEN amount         ELSE 0 END), 0)
-            AS monthly_invoice_total
-    FROM production.invoices
-    WHERE
-      (kind = 'QUARTERLY' AND DATE(created) BETWEEN '2026-04-01' AND '2026-06-30')
-      OR
-      (kind = 'MONTHLY'   AND DATE(created) BETWEEN '2026-04-01' AND '2026-04-30')
-    GROUP BY college_id
+      mp.college_id,
+      mp.invoice_name,
+      mp.invoice_status,
+      ROUND(COALESCE(q.saas_fee,           0), 2)                 AS saas_fee,
+      ROUND(COALESCE(q.seat_prepaid_monthly,0)
+            + COALESCE(mp.seat_overage,    0), 2)                 AS seat_fee,
+      ROUND(COALESCE(mp.growth,            0), 2)                 AS growth,
+      ROUND(COALESCE(ad.additional_items,  0), 2)                 AS additional_items,
+      ROUND(
+        COALESCE(q.saas_fee,           0)
+        + COALESCE(q.seat_prepaid_monthly, 0)
+        + COALESCE(mp.seat_overage,    0)
+        + COALESCE(mp.growth,          0)
+        + COALESCE(ad.additional_items,0), 2)                     AS total_cv,
+      ROUND(mp.invoice_total, 2)                                  AS monthly_invoice_total
+    FROM monthly_purchases mp
+    LEFT JOIN quarterly  q  ON q.college_id  = mp.college_id
+    LEFT JOIN additional ad ON ad.college_id = mp.college_id
     """
     return run_query(sql).set_index("college_id")
 

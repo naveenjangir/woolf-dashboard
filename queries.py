@@ -672,10 +672,13 @@ def get_funnel_extras(year: int, month: int) -> dict:
     sql = f"""
     WITH
     st_wlh AS (
+      -- workload_count is stored in minutes; 25 WLH = 1500 min
+      -- degree_count = 0 excludes students already converted to a degree
       SELECT COUNT(*) AS cnt
       FROM production.st_students
       WHERE DATE(created) < '{first}'
-        AND workload_count > 25
+        AND workload_count >= 1500
+        AND degree_count = 0
     ),
     st_age AS (
       SELECT

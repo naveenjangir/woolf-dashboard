@@ -683,8 +683,7 @@ def get_funnel_extras(year: int, month: int) -> dict:
     st_age AS (
       SELECT
         CASE
-          WHEN DATE_DIFF(DATE(ds.created), DATE(sts.created), DAY) < 90  THEN '0-3m'
-          WHEN DATE_DIFF(DATE(ds.created), DATE(sts.created), DAY) < 180 THEN '3-6m'
+          WHEN DATE_DIFF(DATE(ds.created), DATE(sts.created), DAY) < 180 THEN '0-6m'
           WHEN DATE_DIFF(DATE(ds.created), DATE(sts.created), DAY) < 365 THEN '6-12m'
           ELSE '12+m'
         END AS band,
@@ -710,8 +709,7 @@ def get_funnel_extras(year: int, month: int) -> dict:
     SELECT
       (SELECT cnt                                        FROM st_wlh)             AS wlh_count,
       -- ST age bands + their sum as the canonical tile-3 total
-      (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '0-3m' )                  AS age_0_3m,
-      (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '3-6m' )                  AS age_3_6m,
+      (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '0-6m' )                  AS age_0_6m,
       (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '6-12m')                  AS age_6_12m,
       (SELECT COALESCE(cnt,0) FROM st_age WHERE band = '12+m' )                  AS age_12pm,
       (SELECT COALESCE(SUM(cnt),0)                       FROM st_age)             AS conv_total,
@@ -727,8 +725,7 @@ def get_funnel_extras(year: int, month: int) -> dict:
     r = row.iloc[0]
     return {
         "wlh_count":    int(r.get("wlh_count")    or 0),
-        "age_0_3m":     int(r.get("age_0_3m")     or 0),
-        "age_3_6m":     int(r.get("age_3_6m")     or 0),
+        "age_0_6m":     int(r.get("age_0_6m")     or 0),
         "age_6_12m":    int(r.get("age_6_12m")    or 0),
         "age_12pm":     int(r.get("age_12pm")     or 0),
         "conv_total":   int(r.get("conv_total")   or 0),

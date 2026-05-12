@@ -1776,8 +1776,7 @@ def show_enrolment_overview():
     # so tile number == sum of breakdown parts — always arithmetically clean.
     _extras = get_funnel_extras_cached(sel_year, sel_month)
     _wlh        = _extras.get("wlh_count",   0)
-    _age_0_3m   = _extras.get("age_0_3m",    0)
-    _age_3_6m   = _extras.get("age_3_6m",    0)
+    _age_0_6m   = _extras.get("age_0_6m",    0)
     _age_6_12m  = _extras.get("age_6_12m",   0)
     _age_12pm   = _extras.get("age_12pm",    0)
     _conv_total = _extras.get("conv_total",  _funnel_conv)   # fallback to df total if query fails
@@ -1786,42 +1785,49 @@ def show_enrolment_overview():
     _adm_rpl    = _extras.get("adm_rpl",      0)
     _enrol_total= _extras.get("enrol_total", _funnel_enrol)  # fallback to df total if query fails
 
-    # Shared styles for all tiles
-    _lbl  = 'font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#9ca3af'
-    _num  = 'font-size:24px;font-weight:700;color:#111827;line-height:1.1;margin:4px 0 2px'
-    _sub  = 'font-size:10px;color:#6b7280;margin-top:2px'
+    # Shared styles — better contrast, consistent across all tiles
+    _lbl = ('font-size:11px;font-weight:600;text-transform:uppercase;'
+            'letter-spacing:0.4px;color:#6b7280')
+    _num = ('font-size:24px;font-weight:700;color:#111827;'
+            'line-height:1.1;margin:4px 0 3px')
+    _sub = 'font-size:11px;color:#374151'
 
-    # Sub-text lines — all grey, no mixed colours
-    _wlh_sub  = f'⚡ &gt;25 WLH: {_wlh:,}'
-    _age_sub  = (f'0–3m: {_age_0_3m} · 3–6m: {_age_3_6m} · '
-                 f'6–12m: {_age_6_12m} · 12+m: {_age_12pm}')
-    _adm_sub  = f'Std: {_adm_std} · PBA: {_adm_pba} · RPL: {_adm_rpl}'
+    _wlh_sub = f'⚡ &gt;25 WLH: {_wlh:,}'
+    _age_sub = f'0–6m: {_age_0_6m} · 6–12m: {_age_6_12m} · 12+m: {_age_12pm}'
+    _adm_sub = f'Std: {_adm_std} · PBA: {_adm_pba} · RPL: {_adm_rpl}'
+
+    # flex-wrap:nowrap + flex:1 keeps all 4 tiles on one line at any width
+    _tile  = 'flex:1;min-width:0;text-align:center;padding:8px 12px'
+    _sep   = 'flex-shrink:0;padding:0 6px;color:#d1d5db;font-size:18px;align-self:center'
+    _divr  = 'flex-shrink:0;width:1px;background:#e2e8f0;align-self:stretch'
 
     st.markdown(
         f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
-        f'padding:14px 24px;margin:12px 0 16px;display:flex;align-items:center;gap:0;flex-wrap:wrap">'
-        # ── Tile 1: ST Students till last month ──
-        f'<div style="text-align:center;padding:4px 24px;border-right:1px solid #e2e8f0">'
+        f'padding:14px 16px;margin:12px 0 16px;display:flex;align-items:stretch;'
+        f'flex-wrap:nowrap;gap:0">'
+        # ── Tile 1: ST Students ──
+        f'<div style="{_tile}">'
         f'<div style="{_lbl}">ST Students (till last month)</div>'
         f'<div style="{_num}">{_funnel_st_till:,}</div>'
         f'<div style="{_sub}">{_wlh_sub}</div>'
         f'</div>'
+        f'<div style="{_divr}"></div>'
         # ── Tile 2: New ST ──
-        f'<div style="text-align:center;padding:4px 24px;border-right:1px solid #e2e8f0">'
+        f'<div style="{_tile}">'
         f'<div style="{_lbl}">New ST ({period})</div>'
         f'<div style="{_num}">{_funnel_st_new:,}</div>'
         f'<div style="{_sub}">&nbsp;</div>'
         f'</div>'
-        f'<div style="padding:0 10px;color:#d1d5db;font-size:20px">→</div>'
-        # ── Tile 3: ST→Degree + age bands ──
-        f'<div style="text-align:center;padding:4px 24px;border-right:1px solid #e2e8f0">'
+        f'<div style="{_sep}">→</div>'
+        # ── Tile 3: ST→Degree ──
+        f'<div style="{_tile}">'
         f'<div style="{_lbl}">ST → Degree ({period})</div>'
         f'<div style="{_num}">{_conv_total:,}</div>'
         f'<div style="{_sub}">{_age_sub}</div>'
         f'</div>'
-        f'<div style="padding:0 10px;color:#d1d5db;font-size:20px">→</div>'
-        # ── Tile 4: Enrolled + admission type ──
-        f'<div style="text-align:center;padding:4px 24px">'
+        f'<div style="{_sep}">→</div>'
+        # ── Tile 4: Enrolled ──
+        f'<div style="{_tile}">'
         f'<div style="{_lbl}">Enrolled ({period})</div>'
         f'<div style="{_num}">{_enrol_total:,}</div>'
         f'<div style="{_sub}">{_adm_sub}</div>'

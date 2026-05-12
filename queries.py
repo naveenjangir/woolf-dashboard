@@ -446,7 +446,11 @@ def _rpl_counts(year: int, month: int) -> pd.DataFrame:
 def _rpl_admissions(year: int, month: int) -> pd.DataFrame:
     """
     Per-college count of students admitted via RPL pathway this month.
-    Source: degree_student_services.rpl (DATE) — fast with date-range filter.
+
+    Logic: dss.rpl IS NOT NULL means the student was admitted through RPL
+    (the rpl DATE value itself is not meaningful — only its presence matters).
+    Enrolment date is taken from degree_students.created, same as other counts.
+
     Distinct from rpl_exemption_requests (credit exemptions after admission).
     """
     first, _ = month_bounds(year, month)
@@ -456,13 +460,19 @@ def _rpl_admissions(year: int, month: int) -> pd.DataFrame:
         next_first = date(year, month + 1, 1)
 
     sql = f"""
-    SELECT ds.college_id, COUNT(*) AS rpl_admission
-    FROM production.degree_student_services dss
-    JOIN production.degree_students ds ON ds.id = dss.degree_student_id
+    -- Pre-filter degree_students first (small result set) so BigQuery
+    -- probes degree_student_services by key rather than full-scanning it.
+    WITH enrolled AS (
+      SELECT id, college_id
+      FROM production.degree_students
+      WHERE DATE(created) >= '{first}'
+        AND DATE(created) <  '{next_first}'
+    )
+    SELECT e.college_id, COUNT(*) AS rpl_admission
+    FROM enrolled e
+    JOIN production.degree_student_services dss ON dss.degree_student_id = e.id
     WHERE dss.rpl IS NOT NULL
-      AND dss.rpl >= '{first}'
-      AND dss.rpl <  '{next_first}'
-    GROUP BY ds.college_id
+    GROUP BY e.college_id
     """
     return run_query(sql).set_index("college_id")
 

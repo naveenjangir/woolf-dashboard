@@ -1488,10 +1488,12 @@ def show_college_detail(college_name: str):
     st.divider()
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Enrolment Trend",
         "📚 Study Track",
         "🚀 Growth Levers",
+        "📋 Notion Projects",
+        "📊 MBR / QBR Decks",
     ])
 
     # ── Tab 1: Enrolment Trend ────────────────────────────────────────────────
@@ -1626,6 +1628,57 @@ def show_college_detail(college_name: str):
             st.caption(
                 "Note: Growth levers are most actionable for seat-based colleges. "
                 "Revenue-share colleges focus primarily on new enrolments."
+            )
+
+    # ── Tab 4: Notion Projects ────────────────────────────────────────────────
+    with tab4:
+        st.markdown("### 📋 Notion Projects")
+        st.info(
+            "Paste the Notion project page URL for this college below and it will "
+            "be embedded here. Coming soon: automatic lookup by college name.",
+            icon="ℹ️",
+        )
+        notion_url = st.text_input(
+            "Notion page URL",
+            placeholder="https://www.notion.so/...",
+            key=f"notion_url_{college_name}",
+        )
+        if notion_url:
+            st.markdown(
+                f'<iframe src="{notion_url}" width="100%" height="700" '
+                f'style="border:1px solid #e5e7eb;border-radius:8px" '
+                f'allowfullscreen></iframe>',
+                unsafe_allow_html=True,
+            )
+
+    # ── Tab 5: MBR / QBR Decks ───────────────────────────────────────────────
+    with tab5:
+        st.markdown("### 📊 MBR / QBR Decks")
+        st.info(
+            "Paste a Google Slides or PDF link for the most recent MBR / QBR deck "
+            "for this college and it will be embedded here.",
+            icon="ℹ️",
+        )
+        deck_url = st.text_input(
+            "Google Slides / PDF URL",
+            placeholder="https://docs.google.com/presentation/d/... or PDF link",
+            key=f"deck_url_{college_name}",
+        )
+        if deck_url:
+            # Google Slides: convert share URL to embed URL automatically
+            if "docs.google.com/presentation" in deck_url:
+                embed_url = deck_url.replace("/edit", "/embed").replace(
+                    "/pub", "/embed"
+                )
+                if "?start=" not in embed_url and "?rm=" not in embed_url:
+                    embed_url += "?start=false&loop=false&delayms=0"
+            else:
+                embed_url = deck_url
+            st.markdown(
+                f'<iframe src="{embed_url}" width="100%" height="700" '
+                f'style="border:1px solid #e5e7eb;border-radius:8px" '
+                f'allowfullscreen></iframe>',
+                unsafe_allow_html=True,
             )
 
 

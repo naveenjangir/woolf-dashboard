@@ -696,15 +696,22 @@ def get_funnel_extras(year: int, month: int) -> dict:
         AND DATE(ds.created) <  '{next_first}'
       GROUP BY band
     ),
-    -- ── Admission type — total derived from same source so sum = total ─────────
+    -- ── Admission type — based on activities (same source as table new_enrol) ───
+    -- Join activities → degree_students on user+college+degree to get PBA/RPL flags.
+    -- This guarantees: standard + pba + rpl = enrol_total = sum of table new_enrol columns.
     admission AS (
       SELECT
-        SUM(CASE WHEN is_pba_converted = true                                        THEN 1 ELSE 0 END) AS pba,
-        SUM(CASE WHEN rpl_exemption_request_id IS NOT NULL AND is_pba_converted = false THEN 1 ELSE 0 END) AS rpl,
-        SUM(CASE WHEN is_pba_converted = false AND rpl_exemption_request_id IS NULL  THEN 1 ELSE 0 END) AS standard
-      FROM production.degree_students
-      WHERE DATE(created) >= '{first}'
-        AND DATE(created) <  '{next_first}'
+        SUM(CASE WHEN ds.is_pba_converted = true                                              THEN 1 ELSE 0 END) AS pba,
+        SUM(CASE WHEN ds.rpl_exemption_request_id IS NOT NULL AND ds.is_pba_converted = false THEN 1 ELSE 0 END) AS rpl,
+        SUM(CASE WHEN ds.is_pba_converted = false AND ds.rpl_exemption_request_id IS NULL     THEN 1 ELSE 0 END) AS standard
+      FROM production.activities a
+      JOIN production.degree_students ds
+        ON  ds.user_id    = a.user_id
+        AND ds.college_id = a.college_id
+        AND ds.degree_id  = a.degree_id
+      WHERE a.kind = 'addDegreeStudent'
+        AND DATE(a.created) >= '{first}'
+        AND DATE(a.created) <  '{next_first}'
     )
     SELECT
       (SELECT cnt                                        FROM st_wlh)             AS wlh_count,

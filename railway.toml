@@ -2,8 +2,8 @@
 builder = "nixpacks"
 
 [deploy]
-# startCommand is intentionally NOT set here so each Railway service can set
-# its own via the UI:
-#   web service      → streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
-#   cache-warmer     → python precompute.py
+# start.sh checks $RAILWAY_SERVICE_NAME and runs the correct command:
+#   web service    → streamlit run app.py ...
+#   cache-warmer   → python precompute.py
+startCommand = "bash start.sh"
 restartPolicyType = "on_failure"

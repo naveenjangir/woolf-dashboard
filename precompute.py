@@ -39,7 +39,9 @@ from queries import (
     # Raw query functions (no _dcache wrapper)
     _get_colleges_query,
     _get_pricing_config_query,
+    _current_activity_counts_query,
     _historical_activity_counts_query,
+    _active_base_query,
     _seat_exp_revenue_query,
     _st_new_counts_query,
     _st_conv_pba_counts_query,
@@ -88,6 +90,10 @@ def precompute(year: int, month: int, force: bool = False) -> None:
     # ── Task registry: key → (ttl_hours, fn, positional_args) ─────────────────
     # Key strings MUST match exactly what the _dcache wrappers in queries.py use.
     tasks: dict[str, tuple] = {
+
+        # ─ Hourly: live-ish data — pre-warmed so first page load is instant
+        f"cur_acts_{year}_{month}":               (1.0,   _current_activity_counts_query, (year, month)),
+        f"active_base_{year}_{month}":            (1.0,   _active_base_query,             (year, month)),
 
         # ─ Long-lived: colleges list & fee config (weekly)
         "get_colleges":                           (168.0, _get_colleges_query,            ()),

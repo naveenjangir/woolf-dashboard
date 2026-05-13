@@ -107,9 +107,14 @@ def _get_colleges_query() -> pd.DataFrame:
 
 def _current_activity_counts(year: int, month: int) -> pd.DataFrame:
     """
-    Current-month enrolment/pause/archive events only.
-    Always queries live — this is the fast-changing data users care about most.
+    Current-month enrolment/pause/archive events.
+    Disk-cached for 1 h — precompute refreshes every 2 h so data is max 2 h stale.
     """
+    key = f"cur_acts_{year}_{month}"
+    return _dcache(key, 1.0, _current_activity_counts_query, year, month)
+
+
+def _current_activity_counts_query(year: int, month: int) -> pd.DataFrame:
     first, last = month_bounds(year, month)
     sql = f"""
     SELECT
@@ -171,15 +176,21 @@ def _active_base(year: int, month: int) -> pd.DataFrame:
     Active students per college (ACTIVE / PENDING / SUBMITTED), filtered to
     students enrolled on or after the college's CURRENT phase start date.
 
-    Current month  → live count (status field, as today).
-    Past month     → historical snapshot as of last day of that month:
-                     enrolled before EOD, not yet archived, not paused on that day.
+    Current month  → disk-cached 1 h (precompute refreshes every 2 h).
+    Past month     → disk-cached 720 h (frozen historical snapshot).
     """
+    today = date.today()
+    is_current = (year == today.year and month == today.month)
+    ttl = 1.0 if is_current else 720.0
+    key = f"active_base_{year}_{month}"
+    return _dcache(key, ttl, _active_base_query, year, month)
+
+
+def _active_base_query(year: int, month: int) -> pd.DataFrame:
     today = date.today()
     is_current = (year == today.year and month == today.month)
 
     if is_current:
-        # Live count — same as before
         sql = """
         WITH phase_start AS (
           SELECT s.college_id, MAX(sp.version) AS phase_date
@@ -197,7 +208,6 @@ def _active_base(year: int, month: int) -> pd.DataFrame:
         GROUP BY ds.college_id
         """
     else:
-        # Historical snapshot: count students active on last day of that month
         _, last_day = month_bounds(year, month)
         sql = f"""
         WITH phase_start AS (
@@ -212,13 +222,9 @@ def _active_base(year: int, month: int) -> pd.DataFrame:
         FROM production.degree_students ds
         LEFT JOIN phase_start ps ON ps.college_id = ds.college_id
         WHERE
-          -- Enrolled on or before last day of month
           DATE(ds.created) <= '{last_day}'
-          -- Within current billing phase
           AND (ps.phase_date IS NULL OR DATE(ds.created) >= DATE(ps.phase_date))
-          -- Not archived before end of month
           AND (ds.delisted_timestamp IS NULL OR DATE(ds.delisted_timestamp) > '{last_day}')
-          -- Not paused on the last day of month
           AND NOT (
             ds.pause_started IS NOT NULL
             AND DATE(ds.pause_started) <= '{last_day}'
